@@ -55,9 +55,14 @@ EXTS_OFFICE = {".doc", ".docx", ".xls", ".xlsx", ".ods", ".rtf"}
 EXTS_OUTROS = {".pdf", ".txt", ".url", ".lnk", ".zip", ".htm", ".html", ".js"}
 ALL_EXTENSIONS = EXTS_IMAGEM | EXTS_VIDEO | EXTS_AUDIO | EXTS_OFFICE | EXTS_OUTROS
 
+# Tags EXIF IFD0 que guardam datas (números fixos do padrão EXIF):
+#   36867 = DateTimeOriginal (quando a foto foi tirada)
+#   36868 = DateTimeDigitized (quando foi digitalizada)
+#   306   = DateTime (quando o arquivo foi alterado pela última vez)
 TAG_DATETIME_ORIGINAL = 36867
 TAG_CREATE_DATE = 36868
 TAG_MODIFY_DATE = 306
+# 0x8825 = ponteiro para o bloco GPS dentro do EXIF.
 IFD_GPS = 0x8825
 
 try:
@@ -67,17 +72,29 @@ except Exception:
 
 EXIFTOOL_EXE = shutil.which("exiftool")
 
+# Expressões regulares usadas para encontrar datas e GPS nos textos de
+# metadados. Cada padrão é explicado ao lado de quem o usa.
 RE_DATA_ISO = re.compile(
     r"^(\d{4})[-:](\d{2})[-:](\d{2})(?:[T ](\d{2})[.:](\d{2})[.:](\d{2}))?"
 )
 RE_ANO_ISOLADO = re.compile(r"^\d{4}$")
+
+# "creation_time" é o campo que o ffmpeg imprime no stderr ao inspecionar
+# um vídeo: creation_time   : 2021-06-15T12:34:56.000000Z
 RE_CREATION_TIME = re.compile(r"creation_time\s*:\s*(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2}:\d{2})")
+
+# Campos de localização que o ffmpeg imprime para vídeos QuickTime
+# (iPhone/Android): "location" ou "location-eng" com coordenadas ISO 6709.
 RE_LOCATION_FFMPEG = re.compile(
     r"^\s*(?:location-eng|location|com\.apple\.quicktime\.location\.ISO6709)\s*:\s*(.+?)\s*$",
     re.MULTILINE,
 )
+
+# Coordenadas no padrão ISO 6709, ex.: "+23.5500-046.6333+000/" ou
+# "-23.55-046.63/". Os grupos capturam latitude, longitude e altitude.
 RE_ISO6709 = re.compile(r"([+-]\d{1,3}(?:\.\d+)?)([+-]\d{1,3}(?:\.\d+)?)(?:([+-]\d+(?:\.\d+)?))?/?")
 
+# GPS e datas dentro de blocos XMP (usados por editores de imagem).
 RE_XMP_GPS_LAT = re.compile(r'<exif:GPSLatitude[^>]*>([^<]+)</exif:GPSLatitude>')
 RE_XMP_GPS_LON = re.compile(r'<exif:GPSLongitude[^>]*>([^<]+)</exif:GPSLongitude>')
 RE_XMP_GPS_LAT_ATTR = re.compile(r'exif:GPSLatitude="([^"]+)"')
@@ -90,8 +107,10 @@ RE_XMP_DATA_ATTR = re.compile(
     r'(?:xmp:CreateDate|photoshop:DateCreated|exif:DateTimeOriginal)="([^"]+)"'
 )
 
+# Chaves de texto PNG que costumam guardar datas (tEXt/iTXt).
 PNG_CHAVES_DATA = {"creation time", "creationtime", "date:create", "date:modify"}
 
+# Nomes de campos de data que o exiftool imprime com a opção -G (grupos).
 CHAVES_DATA_EXIFTOOL = (
     "EXIF:DateTimeOriginal", "EXIF:CreateDate", "EXIF:ModifyDate",
     "QuickTime:CreateDate", "QuickTime:CreationDate", "XMP:CreateDate",
@@ -242,7 +261,11 @@ def parsear_iso6709(texto: object) -> tuple[float, float] | None:
 
 
 def ler_gps_exif(exif) -> tuple[float, float] | None:
-    """GPS do IFD GPS (0x8825) de um objeto Exif do Pillow."""
+    """GPS do IFD GPS (0x8825) de um objeto Exif do Pillow.
+
+    Dentro do IFD GPS, as tags 2 e 4 são latitude/longitude em graus,
+    minutos e segundos, e as tags 1 e 3 são as referências N/S e E/W.
+    """
     try:
         ifd = exif.get_ifd(IFD_GPS)
         if not ifd:
