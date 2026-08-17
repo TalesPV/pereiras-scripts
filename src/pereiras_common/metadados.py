@@ -44,6 +44,10 @@ from mutagen.id3 import ID3
 from mutagen.mp4 import MP4
 from PIL import Image
 
+# Funções de data do módulo de nomeação (re-exportadas aqui por
+# compatibilidade: montar_dt, dentro_do_periodo, parsear_data_exif).
+from .nomeacao import dentro_do_periodo, extrair_data_nome, montar_dt, parsear_data_exif  # noqa: F401
+
 logger = logging.getLogger(__name__)
 
 ANO_MINIMO_PADRAO = 1980
@@ -128,28 +132,6 @@ def registrar_heif() -> bool:
         return False
 
 
-def dentro_do_periodo(dt: datetime | None, ano_minimo: int = ANO_MINIMO_PADRAO) -> bool:
-    """True se a data é plausível (não nula, não anterior a ano_minimo, não futura)."""
-    return dt is not None and ano_minimo <= dt.year and dt <= datetime.now()
-
-
-def montar_dt(
-    ano: int | str,
-    mes: int | str,
-    dia: int | str,
-    hora: int | str = 0,
-    minuto: int | str = 0,
-    segundo: int | str = 0,
-    ano_minimo: int = ANO_MINIMO_PADRAO,
-) -> datetime | None:
-    """Monta um datetime validado; retorna None se a data for inválida."""
-    try:
-        dt = datetime(int(ano), int(mes), int(dia), int(hora), int(minuto), int(segundo))
-    except (ValueError, TypeError):
-        return None
-    return dt if dentro_do_periodo(dt, ano_minimo) else None
-
-
 def parsear_data_iso(texto: object, ano_minimo: int = ANO_MINIMO_PADRAO) -> datetime | None:
     """Parseia datas ISO/EXIF flexíveis (com ou sem hora, ignora fuso/fração).
 
@@ -163,17 +145,6 @@ def parsear_data_iso(texto: object, ano_minimo: int = ANO_MINIMO_PADRAO) -> date
     return montar_dt(m.group(1), m.group(2), m.group(3),
                      m.group(4) or 0, m.group(5) or 0, m.group(6) or 0,
                      ano_minimo=ano_minimo)
-
-
-def parsear_data_exif(texto: object, ano_minimo: int = ANO_MINIMO_PADRAO) -> datetime | None:
-    """Parseia o formato clássico do EXIF: "YYYY:MM:DD HH:MM:SS"."""
-    s = str(texto).strip()
-    s = s.replace("-", ":").replace("_", ":").replace("T", " ")
-    s = re.sub(r"\s+", " ", s)
-    m = re.match(r"(\d{4}):(\d{2}):(\d{2})[ T](\d{2}):(\d{2}):(\d{2})", s)
-    if not m:
-        return None
-    return montar_dt(*m.groups(), ano_minimo=ano_minimo)
 
 
 def _parsear_data_tag(valor: object, ano_minimo: int = ANO_MINIMO_PADRAO) -> datetime | None:
@@ -748,6 +719,91 @@ def extrair_metadados(
     return Metadados(caminho=caminho, tipo=tipo, datas=datas, gps=gps)
 
 
+def classificar_sufixo(
+    caminho: str | Path,
+    *,
+    tamanho: int | None = None,
+    min_size_low_res: int = 100000,
+) -> str | None:
+    """Classifica o sufixo de pasta pela extensão, nome e tamanho.
+
+    Ex.: "video.mp4" -> "videos"; "Screenshot_1.jpg" -> "screen_capture";
+    arquivos pequenos -> "low_resolution". None = sem sufixo.
+    """
+    caminho = Path(caminho)
+    nome = caminho.name.lower()
+    ext = caminho.suffix.lower()
+    if ext in EXTS_VIDEO:
+        return "videos"
+    if ext in EXTS_AUDIO:
+        return "audios"
+    if ext in EXTS_OFFICE:
+        return "office"
+    if ext in EXTS_OUTROS:
+        return "outros_tipos"
+    if any(k in nome for k in ("screenshot", "screen", "capture")):
+        return "screen_capture"
+    if any(k in nome for k in ("insta", "facebook", "tiktok", "twitter", "social")):
+        return "social_media"
+    if any(k in nome for k in ("whats", "telegram", "message", "instant", "img-", "wa0")):
+        return "instant_messages"
+    if tamanho is not None and min_size_low_res > 0 and tamanho < min_size_low_res:
+        return "low_resolution"
+    return None
+
+
+def obter_datas(
+    caminho: str | Path,
+    ano_minimo: int = ANO_MINIMO_PADRAO,
+) -> tuple[datetime | None, datetime | None, tuple[float, float] | None]:
+    """Coleta (data_min, data_max, gps) de um arquivo por TODAS as fontes.
+
+    Ordem de prioridade das fontes:
+
+    1. Metadados embutidos (imagens: EXIF/XMP/PNG; vídeos: ffmpeg/mutagen;
+       áudios: ID3/©day/Vorbis), com fallback exiftool opcional.
+    2. Nome do arquivo (extrair_data_nome, do módulo de nomeação).
+    3. Sistema de arquivos (data_filesystem) — última alternativa.
+
+    data_min e data_max podem ser iguais (uma única data encontrada) ou
+    None (nenhuma data válida para o ano_minimo informado).
+    """
+    caminho = Path(caminho)
+    fontes: list[tuple[str, datetime]] = []
+    gps = None
+    tipo = classificar_tipo(caminho)
+    if tipo == "imagem":
+        datas_meta, gps = metadados_imagem(caminho)
+        if not datas_meta and gps is None:
+            datas_meta, gps = metadados_exiftool(caminho)
+    elif tipo == "video":
+        dt_video, gps = metadados_video(caminho)
+        datas_meta = [dt_video] if dt_video else None
+        if dt_video is None and gps is None:
+            datas_meta, gps = metadados_exiftool(caminho)
+    elif tipo == "audio":
+        datas_meta, gps = metadados_audio(caminho)
+        if not datas_meta and gps is None:
+            datas_meta, gps = metadados_exiftool(caminho)
+    else:
+        datas_meta = None
+    if datas_meta:
+        validas = [d for d in datas_meta if dentro_do_periodo(d, ano_minimo)]
+        if validas:
+            fontes.append(("metadados", min(validas)))
+    dt_nome = extrair_data_nome(caminho.stem, ano_minimo)
+    if dt_nome:
+        fontes.append(("nome", dt_nome))
+    if not fontes:
+        dt_fs = data_filesystem(caminho, ano_minimo)
+        if dt_fs:
+            fontes.append(("sistema", dt_fs))
+    if not fontes:
+        return None, None, gps
+    datas = [dt for _, dt in fontes]
+    return min(datas), max(datas), gps
+
+
 __all__ = [
     "ALL_EXTENSIONS",
     "ANO_MINIMO_PADRAO",
@@ -757,6 +813,7 @@ __all__ = [
     "EXTS_OUTROS",
     "EXTS_VIDEO",
     "Metadados",
+    "classificar_sufixo",
     "classificar_tipo",
     "data_filesystem",
     "dentro_do_periodo",
@@ -771,6 +828,7 @@ __all__ = [
     "metadados_video",
     "montar_dt",
     "normalizar_ref",
+    "obter_datas",
     "obter_gps",
     "parsear_data_exif",
     "parsear_data_iso",

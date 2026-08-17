@@ -1,0 +1,149 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""Testes do módulo de nomeação (datas, nome padrão e pastas de destino).
+
+Formato padrão do nome das mídias (fotos, vídeos e áudios):
+
+    YYYY_MM_DD_HHhMMmSSs-YYYY_MM_DD_HHhMMmSSs-cidade-hash6-titulo.ext
+"""
+
+from datetime import datetime
+from pathlib import Path
+
+import pytest
+
+from pereiras_common.nomeacao import (
+    MAX_COMPRIMENTO_NOME,
+    dentro_do_periodo,
+    extrair_data_nome,
+    formatar_data,
+    montar_dt,
+    montar_nome_midia,
+    montar_pasta_destino,
+    parsear_data_exif,
+    titulo_valido,
+)
+
+
+# ------------------------------------------------------------------ datas
+
+def test_formatar_data():
+    dt = datetime(2023, 5, 10, 14, 30, 5)
+    assert formatar_data(dt) == "2023_05_10_14h30m05s"
+
+
+def test_montar_dt_invalido():
+    assert montar_dt(2023, 2, 30) is None
+    assert montar_dt(1970, 1, 1) is None
+    assert montar_dt(3000, 1, 1) is None
+
+
+def test_dentro_do_periodo():
+    assert dentro_do_periodo(datetime(2023, 1, 1))
+    assert not dentro_do_periodo(datetime(1970, 1, 1))
+    assert not dentro_do_periodo(datetime(3000, 1, 1))
+    assert not dentro_do_periodo(None)
+
+
+def test_parsear_data_exif():
+    assert parsear_data_exif("2021:03:15 10:20:30") == datetime(2021, 3, 15, 10, 20, 30)
+    assert parsear_data_exif("2021-03-15T10:20:30") == datetime(2021, 3, 15, 10, 20, 30)
+    assert parsear_data_exif("data qualquer") is None
+
+
+@pytest.mark.parametrize("nome,esperado", [
+    ("foto_2019_07_04_08h09m10s.jpg", datetime(2019, 7, 4, 8, 9, 10)),
+    ("IMG_20190315102030.jpg", datetime(2019, 3, 15, 10, 20, 30)),
+    ("video-2018-12-25_23-59-58.mp4", datetime(2018, 12, 25, 23, 59, 58)),
+    ("antiga_2021_01_02.jpg", datetime(2021, 1, 2)),
+    ("foto_2021_03_15.jpg", datetime(2021, 3, 15)),
+    ("jan_02_2020.jpg", datetime(2020, 1, 2)),
+    ("02 jan 2020.jpg", datetime(2020, 1, 2)),
+])
+def test_extrair_data_nome_mascaras(nome, esperado):
+    assert extrair_data_nome(nome) == esperado
+
+
+def test_extrair_data_nome_prefere_precisa():
+    nome = "2019_07_04_08h09m10s_2019_07_05_00h00m00s.jpg"
+    assert extrair_data_nome(nome) == datetime(2019, 7, 4, 8, 9, 10)
+
+
+def test_extrair_data_nome_sem_data():
+    assert extrair_data_nome("foto_da_praia.jpg") is None
+
+
+def test_extrair_data_nome_ano_minimo():
+    assert extrair_data_nome("foto_1950_01_01.jpg", ano_minimo=1980) is None
+
+
+# ------------------------------------------------------------------ títulos
+
+def test_titulo_valido():
+    assert titulo_valido("festa_de_aniversario")
+    assert not titulo_valido("Festa Aniversário")
+    assert not titulo_valido("")
+    assert not titulo_valido("com espaço")
+
+
+# --------------------------------------------------------- montar_nome_midia
+
+def test_montar_nome_midia_completo():
+    d1 = datetime(2020, 1, 2, 3, 4, 5)
+    d2 = datetime(2021, 6, 7, 8, 9, 10)
+    nome = montar_nome_midia(d1, d2, "rio_de_janeiro",
+                             hash6="k3x9ab", titulo="festa_de_aniversario",
+                             extensao=".jpg")
+    assert nome == ("2020_01_02_03h04m05s-2021_06_07_08h09m10s-"
+                    "rio_de_janeiro-k3x9ab-festa_de_aniversario.jpg")
+
+
+def test_montar_nome_midia_sem_titulo():
+    # Execução sem IA: o bloco {titulo} é omitido, mas o hash permanece.
+    d1 = datetime(2020, 1, 2, 3, 4, 5)
+    d2 = datetime(2021, 6, 7, 8, 9, 10)
+    nome = montar_nome_midia(d1, d2, "sao_paulo", hash6="k3x9ab", extensao=".mp4")
+    assert nome == "2020_01_02_03h04m05s-2021_06_07_08h09m10s-sao_paulo-k3x9ab.mp4"
+
+
+def test_montar_nome_midia_sem_hash():
+    # Parametrização: o cliente pode optar por não usar o hash.
+    d1 = datetime(2020, 1, 2, 3, 4, 5)
+    d2 = datetime(2021, 6, 7, 8, 9, 10)
+    nome = montar_nome_midia(d1, d2, "sao_paulo", titulo="festa", extensao=".jpg")
+    assert nome == "2020_01_02_03h04m05s-2021_06_07_08h09m10s-sao_paulo-festa.jpg"
+
+
+def test_montar_nome_midia_data_unica():
+    d = datetime(2020, 1, 2, 3, 4, 5)
+    nome = montar_nome_midia(d, d, "sem_gps", hash6="k3x9ab", titulo="foto",
+                             extensao=".jpg")
+    assert nome == ("2020_01_02_03h04m05s-2020_01_02_03h04m05s-"
+                    "sem_gps-k3x9ab-foto.jpg")
+
+
+def test_montar_nome_midia_ordem_dos_blocos():
+    # O hash vem SEMPRE antes do título (evita sobrescrita de arquivos
+    # do mesmo horário mesmo quando os títulos coincidem).
+    d = datetime(2020, 1, 2, 3, 4, 5)
+    nome = montar_nome_midia(d, d, "cidade", hash6="abc123", titulo="titulo",
+                             extensao=".jpg")
+    assert nome == ("2020_01_02_03h04m05s-2020_01_02_03h04m05s-"
+                    "cidade-abc123-titulo.jpg")
+
+
+def test_montar_nome_midia_muito_longo():
+    d = datetime(2020, 1, 2, 3, 4, 5)
+    titulo = "_".join(["palavra"] * 60)
+    assert montar_nome_midia(d, d, "cidade", titulo=titulo, extensao=".jpg") is None
+    assert MAX_COMPRIMENTO_NOME == 240
+
+
+# ------------------------------------------------------ montar_pasta_destino
+
+def test_montar_pasta_destino():
+    destino = Path("E:/out")
+    assert montar_pasta_destino(destino, datetime(2023, 5, 1), "%Y_%m") == destino / "2023_05"
+    assert (montar_pasta_destino(destino, datetime(2023, 5, 1), "%Y_%m", sufixo="videos")
+            == destino / "2023_05-videos")
+    assert montar_pasta_destino(destino, None, "%Y_%m") == destino / "sem_data"

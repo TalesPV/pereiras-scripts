@@ -17,13 +17,15 @@ dependencies = [
 1. [Visão geral](#visão-geral)
 2. [Estrutura e relacionamento entre os módulos](#estrutura-e-relacionamento-entre-os-módulos)
 3. [Módulo `metadados`](#módulo-metadados)
-4. [Módulo `uteis`](#módulo-uteis)
-5. [Módulo `ia`](#módulo-ia)
-6. [Chaves de API e segurança](#chaves-de-api-e-segurança)
-7. [Desenvolvimento (TDD)](#desenvolvimento-tdd)
-8. [Como executar os projetos que consomem este pacote](#como-executar-os-projetos-que-consomem-este-pacote)
-9. [Pull Requests](#pull-requests)
-10. [ToDos](#todos)
+4. [Módulo `nomeacao`](#módulo-nomeacao)
+5. [Módulo `geolocalizacao`](#módulo-geolocalizacao)
+6. [Módulo `uteis`](#módulo-uteis)
+7. [Módulo `ia`](#módulo-ia)
+8. [Chaves de API e segurança](#chaves-de-api-e-segurança)
+9. [Desenvolvimento (TDD)](#desenvolvimento-tdd)
+10. [Como executar os projetos que consomem este pacote](#como-executar-os-projetos-que-consomem-este-pacote)
+11. [Pull Requests](#pull-requests)
+12. [ToDos](#todos)
 
 ---
 
@@ -31,16 +33,34 @@ dependencies = [
 
 Os projetos `pyPhotosOrganizeTPV` e `verificar_fotos_videos` precisavam
 das mesmas capacidades: extrair datas/GPS de mídias, gerar títulos com
-IA, converter texto para snake_case, calcular hashes e carregar chaves.
-Este pacote concentra essas funções para não duplicar código.
+IA, montar nomes de arquivo, converter texto para snake_case, calcular
+hashes, carregar chaves e geolocalizar por GPS. Este pacote concentra
+essas funções para não duplicar código.
 
 Produto atual do pacote:
 
 | Módulo | Produto |
 | --- | --- |
-| `metadados` | Datas e GPS de **fotos** (EXIF/XMP/PNG), **vídeos** (ffmpeg/MP4) e **áudios** (ID3/©day/Vorbis), com fallback exiftool e sistema de arquivos. |
+| `metadados` | Datas e GPS de **fotos** (EXIF/XMP/PNG), **vídeos** (ffmpeg/MP4) e **áudios** (ID3/©day/Vorbis), com fallback exiftool e sistema de arquivos; coleta unificada `obter_datas` e sufixos de pasta. |
+| `nomeacao` | **Nome padrão de mídia** e pastas de destino por data (formato abaixo). |
+| `geolocalizacao` | Cidade por GPS (Nominatim/OpenStreetMap, com cache local). |
 | `ia` | Análise de **fotos** com IA (Gemini ou OpenAI): título snake_case, resumo, nível de legalidade 1-5, motivo, modelo e tokens. |
 | `uteis` | `para_snake_case`, `hash_curto_6` (hash alfanumérico de 6 dígitos) e `ler_chave` (chaves de API fora do repositório). |
+
+### Formato padrão do nome das mídias
+
+```
+YYYY_MM_DD_HHhMMmSSs-YYYY_MM_DD_HHhMMmSSs-cidade-hash6-titulo.ext
+```
+
+- 1º bloco = data mais antiga; 2º = mais recente (repetida se houver uma só).
+- `cidade`: snake_case do GPS, `sem_gps` ou coordenadas.
+- `hash6`: hash de 6 caracteres do **conteúdo** (antes do título, para
+  evitar sobrescrita de arquivos do mesmo horário).
+- `titulo`: gerado por IA; omitido em execuções sem IA.
+- Apenas **mídias** (foto/vídeo/áudio) são renomeadas; outros arquivos
+  mantêm o nome original.
+- Os blocos `hash6` e `titulo` são opcionais (parametrização dos clientes).
 
 ## Estrutura e relacionamento entre os módulos
 
@@ -50,24 +70,29 @@ pereiras-scripts.github/
 ├── README.md               # este documento (toda a especificação)
 ├── src/pereiras_common/
 │   ├── __init__.py         # re-exporta a API pública dos módulos
-│   ├── metadados.py        # datas e GPS de fotos, vídeos e áudios
+│   ├── metadados.py        # datas e GPS + obter_datas + classificar_sufixo
+│   ├── nomeacao.py         # datas de nome, nome padrão de mídia e pastas
+│   ├── geolocalizacao.py   # cidade por GPS (Nominatim, cache local)
 │   ├── uteis.py            # texto, hash curto e chaves (sem dependências entre si)
 │   └── ia.py               # análise de fotos com IA (usa uteis.para_snake_case)
 └── tests/
-    ├── test_metadados.py   # 30+ testes de extração de metadados
-    ├── test_uteis.py       # testes de texto/hash/chaves
-    └── test_ia.py          # testes da análise com IA (clientes falsos)
+    ├── test_metadados.py   # 40+ testes (inclusive obter_datas/classificar_sufixo)
+    ├── test_nomeacao.py    # datas, nome padrão e pastas de destino
+    ├── test_geolocalizacao.py  # geocodificação com rede simulada
+    ├── test_uteis.py       # texto/hash/chaves
+    └── test_ia.py          # análise com IA (clientes falsos)
 ```
 
 Relacionamentos:
 
 ```
-uteis.py  <─── ia.py  <─── __init__.py
-metadados.py ──────────^
+uteis.py  ──────────┬─── ia.py ─────────────┐
+nomeacao.py ──── metadados.py ── geolocalizacao.py ── __init__.py
 ```
 
-- `ia.py` importa apenas `uteis.para_snake_case`.
-- `metadados.py` é independente.
+- `metadados` importa as funções de data de `nomeacao` (fonte única).
+- `geolocalizacao` importa `uteis.para_snake_case`.
+- `ia` importa `uteis.para_snake_case`.
 - Os projetos clientes importam de `pereiras_common` (ou dos submódulos).
 
 ## Módulo `metadados`
@@ -101,6 +126,37 @@ Funções de baixo nível (também exportadas): `metadados_imagem`,
 `data_filesystem`, `obter_gps`, `parsear_data_iso`,
 `parsear_iso6709`, `gms_para_decimal`, `ler_gps_exif`,
 `registrar_heif`, `classificar_tipo`.
+
+Funções de alto nível (usadas pelos organizadores):
+
+| Função | Descrição |
+| --- | --- |
+| `obter_datas(caminho, ano_minimo=1980)` | Coleta `(data_min, data_max, gps)` por metadados -> nome do arquivo -> sistema de arquivos. |
+| `classificar_sufixo(caminho, *, tamanho=None, min_size_low_res=100000)` | Sufixo de pasta: `videos`, `audios`, `office`, `outros_tipos`, `screen_capture`, `social_media`, `instant_messages`, `low_resolution` (ou None). |
+
+## Módulo `nomeacao`
+
+Função principal: `montar_nome_midia(data_min, data_max, cidade, *,
+hash6=None, titulo="", extensao="") -> str | None` — monta o formato
+padrão `YYYY_MM_DD_HHhMMmSSs-YYYY_MM_DD_HHhMMmSSs-cidade-hash6-titulo.ext`
+(vide [formato padrão](#formato-padrão-do-nome-das-mídias)).
+
+| Função | Descrição |
+| --- | --- |
+| `montar_nome_midia` | Nome padrão de mídia; None se > 240 caracteres. |
+| `montar_pasta_destino(destino, dt, mask, sufixo=None)` | Subpasta de destino (`%Y_%m` etc., com sufixo opcional; `sem_data` sem data). |
+| `formatar_data(dt)` | Máscara `YYYY_MM_DD_HHhMMmSSs`. |
+| `extrair_data_nome(nome, ano_minimo=1980)` | Data mais provável no nome do arquivo (várias máscaras). |
+| `parsear_data_exif(texto)` / `montar_dt(...)` / `dentro_do_periodo(dt)` | Helpers de data validada. |
+| `titulo_valido(titulo)` | Valida o formato snake_case do título. |
+
+## Módulo `geolocalizacao`
+
+| Função | Descrição |
+| --- | --- |
+| `cidade_por_gps(lat, lon, cache=None, cache_path=None)` | Cidade via Nominatim/OpenStreetMap (gratuito), com cache em JSON e pausa de ~1 req/s (política do serviço). |
+| `cidade_ou_coordenadas(lat, lon, ...)` | Cidade em snake_case ou coordenadas (`-23_5500_-46_6333`). |
+| `carregar_cache_gps(cache_path=None)` / `salvar_cache_gps(cache, cache_path=None)` | Persistência do cache. |
 
 ## Módulo `uteis`
 
@@ -221,8 +277,8 @@ Fluxo para contribuir:
 
 ## ToDos
 
-- [ ] Migrar funções duplicadas restantes dos clientes (nomeação de datas,
-      sha256_arquivo, geocodificação) para este pacote.
+- [ ] Migrar funções duplicadas restantes dos clientes (sha256_arquivo,
+      cache de títulos) para este pacote.
 - [ ] `analisar_foto` para **vídeos** (frames) e **áudios**.
 - [ ] Suporte a mais tipos de IA (`tipo_ia`) no futuro.
 - [ ] Publicar no PyPI quando estabilizar (hoje: instalação via git).

@@ -430,3 +430,95 @@ def test_extrair_metadados_sem_filesystem(tmp_path):
     md = extrair_metadados(caminho, usar_filesystem=False)
     assert md.datas == []
     assert md.data_mais_antiga() is None
+
+
+# ----------------------------------------------------------- obter_datas
+
+def test_obter_datas_imagem_exif(tmp_path):
+    """A data do EXIF é a única fonte quando não há data no nome."""
+    from pereiras_common.metadados import obter_datas
+    caminho = tmp_path / "foto.jpg"
+    _criar_imagem_com_exif(caminho)
+    d_min, d_max, gps = obter_datas(caminho)
+    assert d_min == d_max == datetime(2021, 3, 15, 10, 20, 30)
+    assert gps is None
+
+
+def test_obter_datas_exif_e_nome(tmp_path):
+    """Nome e EXIF são combinados: data1 = menor, data2 = maior."""
+    from pereiras_common.metadados import obter_datas
+    caminho = tmp_path / "viagem_2019_07_04_08h09m10s.jpg"
+    _criar_imagem_com_exif(caminho)
+    d_min, d_max, _ = obter_datas(caminho)
+    assert d_min == datetime(2019, 7, 4, 8, 9, 10)
+    assert d_max == datetime(2021, 3, 15, 10, 20, 30)
+
+
+def test_obter_datas_audio(tmp_path):
+    """Áudio com tag ©day: a data vem dos metadados do áudio."""
+    from mutagen.mp4 import MP4
+    from pereiras_common.metadados import obter_datas
+    caminho = tmp_path / "gravacao.m4a"
+    _criar_m4a(caminho)
+    mp4 = MP4(str(caminho))
+    mp4.tags["\xa9day"] = ["2021-06-15"]
+    mp4.save()
+    d_min, d_max, gps = obter_datas(caminho)
+    assert d_min == d_max == datetime(2021, 6, 15)
+    assert gps is None
+
+
+def test_obter_datas_video(tmp_path):
+    """Vídeo com creation_time: a data vem do container."""
+    from pereiras_common.metadados import obter_datas
+    ff = _ffmpeg()
+    video = tmp_path / "video.mp4"
+    subprocess.run(
+        [ff, "-y", "-loglevel", "error", "-f", "lavfi",
+         "-i", "testsrc=size=64x64:rate=5", "-t", "1",
+         "-metadata", "creation_time=2021-06-15T12:34:56Z",
+         "-movflags", "use_metadata_tags", str(video)],
+        check=True, capture_output=True,
+    )
+    d_min, d_max, _ = obter_datas(video)
+    assert d_min == d_max == datetime(2021, 6, 15, 12, 34, 56)
+
+
+def test_obter_datas_outro_usa_filesystem(tmp_path):
+    """Arquivos sem metadados e sem data no nome usam o sistema de arquivos."""
+    from pereiras_common.metadados import obter_datas
+    caminho = tmp_path / "anotacoes.txt"
+    caminho.write_text("x", encoding="utf-8")
+    d_min, d_max, _ = obter_datas(caminho)
+    assert d_min == d_max
+    assert datetime(2020, 1, 1) <= d_min <= datetime.now()
+
+
+def test_obter_datas_sem_nenhuma_fonte(tmp_path, monkeypatch):
+    """Sem metadados, sem nome, sem filesystem: (None, None, None)."""
+    from pereiras_common.metadados import obter_datas
+    caminho = tmp_path / "foto.jpg"
+    _criar_imagem_com_exif(caminho, datetime_original="1950:01:01 00:00:00")
+    monkeypatch.setattr(mod, "data_filesystem", lambda caminho, ano_minimo=1980: None)
+    d_min, d_max, gps = obter_datas(caminho, ano_minimo=1980)
+    assert d_min is None and d_max is None
+    assert gps is None
+
+
+# ------------------------------------------------------- classificar_sufixo
+
+@pytest.mark.parametrize("nome,ext,tamanho,min_size,esperado", [
+    ("video.mp4", ".mp4", 10 ** 8, 100000, "videos"),
+    ("audio.mp3", ".mp3", 10 ** 8, 100000, "audios"),
+    ("doc.pdf", ".pdf", 10 ** 8, 100000, "outros_tipos"),
+    ("Screenshot_1.jpg", ".jpg", 10 ** 6, 100000, "screen_capture"),
+    ("insta_post.jpg", ".jpg", 10 ** 6, 100000, "social_media"),
+    ("IMG-20190315-WA0000.jpg", ".jpg", 10 ** 6, 100000, "instant_messages"),
+    ("pequena.jpg", ".jpg", 50000, 100000, "low_resolution"),
+    ("normal.jpg", ".jpg", 10 ** 6, 100000, None),
+])
+def test_classificar_sufixo(nome, ext, tamanho, min_size, esperado):
+    from pathlib import Path
+    from pereiras_common.metadados import classificar_sufixo
+    caminho = Path("x") / nome
+    assert classificar_sufixo(caminho, tamanho=tamanho, min_size_low_res=min_size) == esperado

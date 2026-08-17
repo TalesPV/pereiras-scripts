@@ -2,11 +2,21 @@
 
 Contém funções reutilizáveis por vários scripts Python:
 
-- :mod:`pereiras_common.metadados`: datas e GPS de fotos, vídeos e áudios.
+- :mod:`pereiras_common.metadados`: datas e GPS de fotos, vídeos e áudios
+  (+ coleta unificada obter_datas e sufixos de pasta).
+- :mod:`pereiras_common.nomeacao`: nomes padrão de mídia e pastas de
+  destino (formato YYYY_MM_DD_HHhMMmSSs-...-cidade-hash6-titulo.ext).
 - :mod:`pereiras_common.ia`: análise de fotos com IA (Gemini/OpenAI).
+- :mod:`pereiras_common.geolocalizacao`: cidade por GPS (Nominatim).
 - :mod:`pereiras_common.uteis`: texto (snake_case), hash curto e chaves.
 """
 
+from .geolocalizacao import (
+    carregar_cache_gps,
+    cidade_ou_coordenadas,
+    cidade_por_gps,
+    salvar_cache_gps,
+)
 from .ia import AnaliseFoto, ErroAnaliseIA, analisar_foto
 from .metadados import (
     ALL_EXTENSIONS,
@@ -16,6 +26,7 @@ from .metadados import (
     EXTS_OUTROS,
     EXTS_VIDEO,
     Metadados,
+    classificar_sufixo,
     classificar_tipo,
     data_filesystem,
     extrair_metadados,
@@ -25,10 +36,23 @@ from .metadados import (
     metadados_exiftool,
     metadados_imagem,
     metadados_video,
+    obter_datas,
     obter_gps,
     parsear_data_iso,
     parsear_iso6709,
     registrar_heif,
+)
+from .nomeacao import (
+    ANO_MINIMO_PADRAO,
+    MAX_COMPRIMENTO_NOME,
+    dentro_do_periodo,
+    extrair_data_nome,
+    formatar_data,
+    montar_dt,
+    montar_nome_midia,
+    montar_pasta_destino,
+    parsear_data_exif,
+    titulo_valido,
 )
 from .uteis import (
     CHAVE_GEMINI_PADRAO,
@@ -41,6 +65,7 @@ from .uteis import (
 
 __all__ = [
     "ALL_EXTENSIONS",
+    "ANO_MINIMO_PADRAO",
     "AnaliseFoto",
     "CHAVE_GEMINI_PADRAO",
     "CHAVE_OPENAI_PADRAO",
@@ -51,11 +76,19 @@ __all__ = [
     "EXTS_OUTROS",
     "EXTS_VIDEO",
     "ErroAnaliseIA",
+    "MAX_COMPRIMENTO_NOME",
     "Metadados",
     "analisar_foto",
+    "carregar_cache_gps",
+    "cidade_ou_coordenadas",
+    "cidade_por_gps",
+    "classificar_sufixo",
     "classificar_tipo",
     "data_filesystem",
+    "dentro_do_periodo",
+    "extrair_data_nome",
     "extrair_metadados",
+    "formatar_data",
     "gms_para_decimal",
     "hash_curto_6",
     "ler_chave",
@@ -64,9 +97,16 @@ __all__ = [
     "metadados_exiftool",
     "metadados_imagem",
     "metadados_video",
+    "montar_dt",
+    "montar_nome_midia",
+    "montar_pasta_destino",
+    "obter_datas",
     "obter_gps",
     "para_snake_case",
+    "parsear_data_exif",
     "parsear_data_iso",
     "parsear_iso6709",
     "registrar_heif",
+    "salvar_cache_gps",
+    "titulo_valido",
 ]
