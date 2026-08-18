@@ -12,6 +12,7 @@ Aqui vivem funções pequenas e independentes que vários scripts usam:
 - :func:`normalizar_titulo`: limpa o título devolvido por uma IA.
 - :func:`carregar_cache_jsonl` / :func:`gravar_cache_jsonl`: cache
   append-only em JSONL (usado para não repetir chamadas de API).
+- :func:`expandir_caminho`: resolve ``~``, ``$HOME`` e ``%USERPROFILE%``.
 - :func:`ler_chave`: lê uma chave de API de um arquivo, com segurança
   (as chaves NUNCA devem ser escritas no código-fonte).
 
@@ -27,6 +28,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 import unicodedata
 from pathlib import Path
@@ -248,13 +250,53 @@ def gravar_cache_jsonl(registro: dict, cache_path: str | Path) -> None:
         pass
 
 
+def expandir_caminho(caminho: str | Path | None) -> Path | None:
+    r"""Resolve as abreviações da pasta pessoal em um caminho digitado.
+
+    Aceita as três notações que aparecem no dia a dia de quem usa Windows
+    (e as equivalentes do Linux/macOS):
+
+    - ``$HOME\.chaves_ia\chave.key``  (PowerShell)
+    - ``%USERPROFILE%\.chaves_ia\chave.key``  (cmd.exe)
+    - ``~/.chaves_ia/chave.key``  (Unix; o Python não expande sozinho)
+
+    Por que isso importa: o PowerShell só expande ``$HOME`` quando o
+    argumento NÃO está entre aspas simples. Digitando
+    ``--chave '$HOME\.chaves_ia\x.key'`` o texto chega literal ao
+    programa — e sem esta função viraria um caminho inexistente.
+
+    Devolve ``None`` quando ``caminho`` é ``None`` (o chamador então usa
+    o valor padrão).
+
+    Exemplos::
+
+        expandir_caminho("~/.chaves_ia/x.key")        -> C:\Users\voce\.chaves_ia\x.key
+        expandir_caminho("$HOME/.chaves_ia/x.key")    -> idem
+    """
+    if caminho is None:
+        return None
+    # expandvars resolve %USERPROFILE% e $HOME/$USERPROFILE quando definidos;
+    # expanduser resolve o "~". A ordem importa: "$HOME" pode virar um
+    # caminho que ainda comece por "~" em alguns ambientes.
+    texto = os.path.expandvars(str(caminho))
+    # No Windows o HOME nem sempre existe como variável de ambiente; nesse
+    # caso expandvars devolve "$HOME" intacto e trocamos pela pasta pessoal.
+    for marcador in ("$HOME", "${HOME}", "$USERPROFILE", "${USERPROFILE}"):
+        if texto.startswith(marcador):
+            texto = str(Path.home()) + texto[len(marcador):]
+            break
+    return Path(os.path.expanduser(texto))
+
+
 def ler_chave(caminho_arquivo: str | Path) -> str | None:
     """Lê uma chave de API de um arquivo de texto e devolve limpa.
 
     Regras de segurança (importante!):
 
     - A chave fica em um arquivo FORA do repositório git (padrão:
-      ``~/.chaves_ia/``) — nunca escreva chaves no código.
+      ``$HOME\.chaves_ia\``) — nunca escreva chaves no código.
+    - O caminho aceita ``~``, ``$HOME`` e ``%USERPROFILE%``
+      (:func:`expandir_caminho`).
     - O arquivo deve conter apenas a chave (espaços e quebras de linha
       nas bordas são removidos automaticamente).
 
@@ -263,10 +305,10 @@ def ler_chave(caminho_arquivo: str | Path) -> str | None:
 
     Exemplos::
 
-        ler_chave(Path.home() / ".chaves_ia" / "chave_google_gemini.key")
+        ler_chave(r"$HOME\.chaves_ia\chave_google_gemini.key")
     """
-    caminho = Path(caminho_arquivo)
-    if not caminho.is_file():
+    caminho = expandir_caminho(caminho_arquivo)
+    if caminho is None or not caminho.is_file():
         # Arquivo não existe: o chamador decide o que fazer (ignorar IA etc.).
         return None
     try:
@@ -286,6 +328,7 @@ __all__ = [
     "NOME_CHAVE_GEMINI",
     "NOME_CHAVE_OPENAI",
     "carregar_cache_jsonl",
+    "expandir_caminho",
     "gravar_cache_jsonl",
     "hash_curto_6",
     "ler_chave",

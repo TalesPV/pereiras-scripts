@@ -10,6 +10,7 @@ import pytest
 from pereiras_common.uteis import (
     DIR_CHAVES_PADRAO,
     carregar_cache_jsonl,
+    expandir_caminho,
     gravar_cache_jsonl,
     hash_curto_6,
     ler_chave,
@@ -165,3 +166,44 @@ def test_cache_jsonl_inexistente_devolve_vazio(tmp_path):
 def test_normalizar_titulo(entrada, esperado):
     """Título da IA vira snake_case de no máximo 5 palavras (vazio se não sobrar nada)."""
     assert normalizar_titulo(entrada) == esperado
+
+
+# ------------------------------------------- expansão de caminhos do usuário
+
+@pytest.mark.parametrize("entrada", [
+    "~/.chaves_ia/chave_google_gemini.key",
+    r"~\.chaves_ia\chave_google_gemini.key",
+    r"$HOME\.chaves_ia\chave_google_gemini.key",
+    "$HOME/.chaves_ia/chave_google_gemini.key",
+    r"%USERPROFILE%\.chaves_ia\chave_google_gemini.key",
+    r"$USERPROFILE\.chaves_ia\chave_google_gemini.key",
+])
+def test_expandir_caminho_resolve_pasta_do_usuario(entrada):
+    """No Windows o usuário digita $HOME\...; entre aspas simples ele chega literal."""
+    esperado = Path.home() / ".chaves_ia" / "chave_google_gemini.key"
+    assert expandir_caminho(entrada) == esperado
+
+
+def test_expandir_caminho_nao_altera_caminho_absoluto(tmp_path):
+    p = tmp_path / "chaves" / "gemini.key"
+    assert expandir_caminho(str(p)) == p
+    assert expandir_caminho(p) == p
+
+
+def test_expandir_caminho_aceita_none():
+    assert expandir_caminho(None) is None
+
+
+def test_ler_chave_expande_notacao_do_usuario(tmp_path, monkeypatch):
+    """ler_chave aceita ~ e $HOME: o usuário não precisa digitar o caminho inteiro."""
+    casa = tmp_path / "usuario"
+    (casa / ".chaves_ia").mkdir(parents=True)
+    (casa / ".chaves_ia" / "chave_google_gemini.key").write_text(
+        "CHAVE-DE-TESTE-1234567890", encoding="utf-8")
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: casa))
+    monkeypatch.setenv("HOME", str(casa))
+    monkeypatch.setenv("USERPROFILE", str(casa))
+
+    for notacao in (r"$HOME\.chaves_ia\chave_google_gemini.key",
+                    "~/.chaves_ia/chave_google_gemini.key"):
+        assert ler_chave(notacao) == "CHAVE-DE-TESTE-1234567890", notacao
