@@ -276,6 +276,20 @@ uv sync          # instala dependências e o ambiente
 uv run pytest    # roda todos os testes
 ```
 
+### exiftool (opcional, recomendado)
+
+O [exiftool](https://exiftool.org/) é o padrão de referência em leitura de
+metadados e serve de **fallback** quando Pillow, ffmpeg e mutagen não acham
+data ou GPS. Sem ele o programa funciona, apenas com menos alternativas.
+
+```powershell
+winget install --id OliverBetz.ExifTool --exact
+```
+
+O caminho é resolvido no momento do `import`: depois de instalar, abra um
+terminal novo para que o programa o enxergue.
+
+
 Convenções:
 
 - Testes em `tests/test_<modulo>.py`.
@@ -310,6 +324,19 @@ Fluxo para contribuir:
 5. Requisitos de merge: testes passando e README atualizado.
 
 ## Histórico de versões
+
+### 0.3.0
+
+- **Novo**: `expandir_caminho` resolve `~`, `$HOME` e `%USERPROFILE%` nos
+  caminhos digitados. Importa no PowerShell: entre aspas simples ele não
+  expande `$HOME`, e o texto chegava literal ao programa.
+- **Novo**: `localizar_chave` encontra o arquivo de chave por variação de nome
+  dentro da pasta (`chave_google_gemini.key`, `CHAVE_GOOGLE_GEMINI.txt`,
+  `._CHAVE_GOOGLE_GEMINI.txt`), em vez de exigir um nome exato. `ler_chave`
+  passa a aceitar uma pasta mais o `tipo` do provedor.
+- **Novo**: `preservar_nome_original` indica quando o nome atual já traz um
+  título que o nome alvo perderia — usado para não apagar títulos de IA em
+  execuções sem IA.
 
 ### 0.2.0
 
