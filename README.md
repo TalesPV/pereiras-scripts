@@ -149,6 +149,20 @@ padrão `YYYY_MM_DD_HHhMMmSSs-YYYY_MM_DD_HHhMMmSSs-cidade-hash6-titulo.ext`
 | `extrair_data_nome(nome, ano_minimo=1980)` | Data mais provável no nome do arquivo (várias máscaras). |
 | `parsear_data_exif(texto)` / `montar_dt(...)` / `dentro_do_periodo(dt)` | Helpers de data validada. |
 | `titulo_valido(titulo)` | Valida o formato snake_case do título. |
+| `preservar_nome_original(nome_atual, data_min, data_max, cidade, hash6=None)` | True quando o nome ATUAL já traz um título que o nome alvo perderia (ver abaixo). |
+
+### Não perder o título já gravado no nome
+
+Se um arquivo já foi nomeado com título de IA e uma nova execução roda
+**sem IA**, o nome alvo sairia sem o bloco de título — apagando algo que
+só uma nova chamada de API saberia recriar. `preservar_nome_original`
+detecta esse caso (mesmas datas, mesma cidade, título válido no fim) e o
+cliente mantém o nome original:
+
+```
+atual: 1997_..-1997_..-sem_gps-retrato_de_jovem.BMP   -> mantido
+atual: 1997_..-1997_..-sem_gps.BMP                    -> renomeado (ganha o hash6)
+```
 
 ## Módulo `geolocalizacao`
 
@@ -168,9 +182,10 @@ padrão `YYYY_MM_DD_HHhMMmSSs-YYYY_MM_DD_HHhMMmSSs-cidade-hash6-titulo.ext`
 | `normalizar_titulo` | `(texto, max_palavras=5) -> str` | Limpa o título devolvido pela IA (aspas/markdown), corta em 5 palavras e converte para snake_case; `""` se não sobrar nada. |
 | `carregar_cache_jsonl` | `(cache_path, chave="sha256") -> dict` | Lê um cache append-only JSONL como `{chave: registro}`; ignora linhas corrompidas. |
 | `gravar_cache_jsonl` | `(registro, cache_path) -> None` | Anexa um registro ao cache JSONL (falhas de I/O são silenciosas de propósito). |
+| `expandir_caminho` | `(caminho) -> Path \| None` | Resolve `~`, `$HOME` e `%USERPROFILE%` no caminho digitado. `None` entra, `None` sai. |
 | `ler_chave` | `(caminho_arquivo) -> str \| None` | Lê uma chave de API de arquivo (fora do repositório), limpa espaços e valida tamanho mínimo. |
 
-Constantes: `DIR_CHAVES_PADRAO` (`~/.chaves_ia`), `CHAVE_GEMINI_PADRAO`,
+Constantes: `DIR_CHAVES_PADRAO` (`$HOME\.chaves_ia`), `CHAVE_GEMINI_PADRAO`,
 `CHAVE_OPENAI_PADRAO`.
 
 ### Especificação do `hash_curto_6`
@@ -223,11 +238,15 @@ não suportado).
 Política adotada (recomendada):
 
 - As chaves NUNCA são escritas no código nem versionadas no git.
-- Padrão: arquivos na pasta do usuário `~/.chaves_ia/`:
+- Padrão: arquivos na pasta do usuário `$HOME\.chaves_ia\`
+  (Windows; no Linux/macOS, `~/.chaves_ia/`):
   - `chave_google_gemini.key` (Gemini)
   - `chave_openai_chatgpt.key` (OpenAI)
 - Cada programa cliente aceita o caminho do arquivo pela linha de
   comando (`--chave-gemini`/`--chave-openai`), sempre com o padrão acima.
+- Os caminhos aceitam `~`, `$HOME` e `%USERPROFILE%` (`expandir_caminho`).
+  Isso importa no PowerShell: entre **aspas simples** ele não expande
+  `$HOME`, e o texto chegaria literal ao programa.
 - A chave em si viaja apenas como parâmetro de função (nunca aparece em logs).
 
 > Nota de segurança: evite passar a chave como texto puro na linha de
@@ -297,6 +316,10 @@ Fluxo para contribuir:
   `gravar_cache_jsonl` (migrados dos dois projetos clientes).
 - **Novo**: `hash_curto_6(caminho, *, digest=...)` reaproveita um SHA-256 já
   calculado — uma leitura por arquivo em vez de duas.
+- **Novo**: `expandir_caminho` resolve `~`, `$HOME` e `%USERPROFILE%` nos
+  caminhos digitados (o PowerShell não expande `$HOME` entre aspas simples).
+- **Novo**: `preservar_nome_original` evita apagar o título já gravado no
+  nome quando a execução roda sem IA.
 
 ## ToDos
 

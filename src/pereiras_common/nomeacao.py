@@ -188,6 +188,53 @@ def montar_nome_midia(
     return nome
 
 
+def preservar_nome_original(
+    nome_atual: str,
+    data_min: datetime | None,
+    data_max: datetime | None,
+    cidade: str,
+    hash6: str | None = None,
+) -> bool:
+    """Indica se o nome ATUAL já carrega um título que o nome alvo perderia.
+
+    Cenário que isso resolve: um arquivo já foi nomeado com título de IA
+    (``...-sem_gps-retrato_de_jovem.jpg``) e uma nova execução roda **sem
+    IA**. O nome alvo sairia sem o bloco de título, apagando uma informação
+    que só uma nova chamada de API saberia recriar. Nesse caso o certo é
+    manter o nome original.
+
+    Devolve True somente quando as duas condições valem:
+
+    1. o nome atual começa exatamente pelo alvo sem título, isto é,
+       ``{data_min}-{data_max}-{cidade}`` (o bloco ``hash6``, se houver, é
+       aceito logo em seguida) — ou seja, é o MESMO arquivo já nomeado;
+    2. o que sobra depois disso é um título snake_case válido.
+
+    Qualquer divergência de data ou cidade devolve False: aí o nome alvo
+    traz informação nova e a renomeação vale a pena.
+
+    Exemplos (data 1997-06-10 21:17:16, cidade "sem_gps", hash6 "og12s3")::
+
+        "1997_..-1997_..-sem_gps-retrato.jpg"         -> True  (tem título)
+        "1997_..-1997_..-sem_gps-og12s3-retrato.jpg"  -> True  (tem título)
+        "1997_..-1997_..-sem_gps-og12s3.jpg"          -> False (nada a perder)
+        "1997_..-1997_..-fortaleza-retrato.jpg"       -> False (outra cidade)
+    """
+    if data_min is None or data_max is None:
+        return False
+    # Prefixo do nome alvo SEM o bloco de título: se o arquivo já foi
+    # nomeado por este mesmo programa, o nome começa exatamente assim.
+    prefixo = f"{formatar_data(data_min)}-{formatar_data(data_max)}-{cidade}"
+    radical = Path(nome_atual).stem
+    if not radical.startswith(prefixo):
+        return False
+    resto = radical[len(prefixo):].lstrip("-")
+    # O hash6 fica ANTES do título: se estiver presente, pula para o título.
+    if hash6 and resto.startswith(hash6):
+        resto = resto[len(hash6):].lstrip("-")
+    return titulo_valido(resto)
+
+
 def montar_pasta_destino(
     destino: Path,
     dt: datetime | None,
@@ -218,6 +265,7 @@ __all__ = [
     "montar_dt",
     "montar_nome_midia",
     "montar_pasta_destino",
+    "preservar_nome_original",
     "parsear_data_exif",
     "titulo_valido",
 ]

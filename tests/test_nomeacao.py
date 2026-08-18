@@ -20,6 +20,7 @@ from pereiras_common.nomeacao import (
     montar_dt,
     montar_nome_midia,
     montar_pasta_destino,
+    preservar_nome_original,
     parsear_data_exif,
     titulo_valido,
 )
@@ -147,3 +148,49 @@ def test_montar_pasta_destino():
     assert (montar_pasta_destino(destino, datetime(2023, 5, 1), "%Y_%m", sufixo="videos")
             == destino / "2023_05-videos")
     assert montar_pasta_destino(destino, None, "%Y_%m") == destino / "sem_data"
+
+
+# ------------------------------- preservar o nome que já carrega um título
+
+DT_A = datetime(1997, 6, 10, 21, 17, 16)
+
+
+@pytest.mark.parametrize("nome_atual,motivo", [
+    ("1997_06_10_21h17m16s-1997_06_10_21h17m16s-sem_gps-retrato_de_jovem.BMP",
+     "formato antigo (sem hash6) com título gerado por IA"),
+    ("1997_06_10_21h17m16s-1997_06_10_21h17m16s-sem_gps-og12s3-retrato_de_jovem.BMP",
+     "formato atual com hash6 e título"),
+])
+def test_preservar_nome_original_quando_ha_titulo(nome_atual, motivo):
+    """Renomear apagaria um título que só uma chamada de IA saberia recriar."""
+    assert preservar_nome_original(nome_atual, DT_A, DT_A, "sem_gps",
+                                   hash6="og12s3") is True, motivo
+
+
+@pytest.mark.parametrize("nome_atual,motivo", [
+    ("1997_06_10_21h17m16s-1997_06_10_21h17m16s-sem_gps.BMP",
+     "sem título: renomear só acrescenta o hash6"),
+    ("1997_06_10_21h17m16s-1997_06_10_21h17m16s-sem_gps-og12s3.BMP",
+     "só o hash6, nenhum título a perder"),
+    ("2020_01_01_00h00m00s-2020_01_01_00h00m00s-sem_gps-titulo.BMP",
+     "datas diferentes: é outro arquivo, não há o que preservar"),
+    ("1997_06_10_21h17m16s-1997_06_10_21h17m16s-fortaleza-titulo.BMP",
+     "cidade diferente: o nome alvo carrega informação nova"),
+    ("foto_qualquer_sem_formato.BMP",
+     "fora do formato padrão"),
+])
+def test_nao_preservar_quando_nao_ha_titulo_a_perder(nome_atual, motivo):
+    assert preservar_nome_original(nome_atual, DT_A, DT_A, "sem_gps",
+                                   hash6="og12s3") is False, motivo
+
+
+def test_preservar_nome_original_sem_hash6():
+    """Clientes que não usam hash6 também preservam o título."""
+    assert preservar_nome_original(
+        "1997_06_10_21h17m16s-1997_06_10_21h17m16s-sem_gps-praia.jpg",
+        DT_A, DT_A, "sem_gps") is True
+
+
+def test_preservar_nome_original_sem_data():
+    """Sem data não há nome alvo: nada a comparar."""
+    assert preservar_nome_original("qualquer.jpg", None, None, "sem_gps") is False
