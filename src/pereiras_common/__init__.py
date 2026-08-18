@@ -8,6 +8,7 @@ Contém funções reutilizáveis por vários scripts Python:
   destino (formato YYYY_MM_DD_HHhMMmSSs-...-cidade-hash6-titulo.ext).
 - :mod:`pereiras_common.ia`: análise de fotos com IA (Gemini/OpenAI).
 - :mod:`pereiras_common.geolocalizacao`: cidade por GPS (Nominatim).
+- :mod:`pereiras_common.locais`: onde guardar dados, logs e cache.
 - :mod:`pereiras_common.uteis`: texto (snake_case), SHA-256, hash curto,
   título normalizado, cache JSONL e chaves de API.
 """
@@ -19,6 +20,13 @@ from .geolocalizacao import (
     salvar_cache_gps,
 )
 from .ia import AnaliseFoto, ErroAnaliseIA, analisar_foto
+from .locais import (
+    NOME_PASTA_DADOS,
+    pasta_cache,
+    pasta_dados_colecao,
+    pasta_logs,
+    resolver_pasta_dados,
+)
 from .metadados import (
     ALL_EXTENSIONS,
     EXTS_AUDIO,
@@ -84,6 +92,7 @@ __all__ = [
     "ErroAnaliseIA",
     "MAX_COMPRIMENTO_NOME",
     "MAX_PALAVRAS_TITULO",
+    "NOME_PASTA_DADOS",
     "Metadados",
     "analisar_foto",
     "carregar_cache_gps",
@@ -113,10 +122,14 @@ __all__ = [
     "obter_datas",
     "obter_gps",
     "para_snake_case",
+    "pasta_cache",
+    "pasta_dados_colecao",
+    "pasta_logs",
     "parsear_data_exif",
     "parsear_data_iso",
     "parsear_iso6709",
     "registrar_heif",
+    "resolver_pasta_dados",
     "salvar_cache_gps",
     "sha256_arquivo",
     "titulo_valido",

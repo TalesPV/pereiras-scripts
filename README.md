@@ -45,6 +45,7 @@ Produto atual do pacote:
 | `nomeacao` | **Nome padrão de mídia** e pastas de destino por data (formato abaixo). |
 | `geolocalizacao` | Cidade por GPS (Nominatim/OpenStreetMap, com cache local). |
 | `ia` | Análise de **fotos** com IA (Gemini ou OpenAI): título snake_case, resumo, nível de legalidade 1-5, motivo, modelo e tokens. |
+| `locais` | Onde guardar dados, logs e cache (pasta da coleção x pastas do usuário). |
 | `uteis` | `para_snake_case`, `sha256_arquivo`, `hash_curto_6` (hash alfanumérico de 6 dígitos), `normalizar_titulo` e cache JSONL (`carregar_cache_jsonl`/`gravar_cache_jsonl`); `ler_chave` (chaves de API fora do repositório). |
 
 ### Formato padrão do nome das mídias
@@ -73,6 +74,7 @@ pereiras-scripts.github/
 │   ├── metadados.py        # datas e GPS + obter_datas + classificar_sufixo
 │   ├── nomeacao.py         # datas de nome, nome padrão de mídia e pastas
 │   ├── geolocalizacao.py   # cidade por GPS (Nominatim, cache local)
+│   ├── locais.py           # onde guardar dados, logs e cache
 │   ├── uteis.py            # texto, hashes, cache JSONL e chaves (sem dependências entre si)
 │   └── ia.py               # análise de fotos com IA (usa uteis.normalizar_titulo)
 └── tests/
@@ -171,6 +173,22 @@ atual: 1997_..-1997_..-sem_gps.BMP                    -> renomeado (ganha o hash
 | `cidade_por_gps(lat, lon, cache=None, cache_path=None)` | Cidade via Nominatim/OpenStreetMap (gratuito), com cache em JSON e pausa de ~1 req/s (política do serviço). |
 | `cidade_ou_coordenadas(lat, lon, ...)` | Cidade em snake_case ou coordenadas (`-23_5500_-46_6333`). |
 | `carregar_cache_gps(cache_path=None)` / `salvar_cache_gps(cache, cache_path=None)` | Persistência do cache. |
+
+## Módulo `locais`
+
+Os arquivos gerados não são todos da mesma natureza, e o módulo separa por
+**a quem cada um pertence**:
+
+| Função | Devolve | Para quê |
+| --- | --- | --- |
+| `pasta_dados_colecao(raiz)` | `<raiz>/.midias-dados` | Listas, índices e o cache de SHA-256 — descrevem **aquela** coleção e viajam com ela. |
+| `pasta_logs(app)` | pasta de logs do usuário | Registro de execução: é da máquina, não da coleção. |
+| `pasta_cache(app)` | pasta de cache do usuário | Só o que pode ser recriado **de graça** (ex.: geocodificação). |
+| `resolver_pasta_dados(escolhida, raiz, legado)` | o caminho a usar | `--dados-dir` vence; senão a coleção; senão a pasta antiga, se ela já tiver dados. |
+
+> O cache de SHA-256 **não** vai para `pasta_cache`: recriá-lo custa dinheiro
+> de API, e ferramentas de limpeza de disco apagam a pasta de cache sem avisar.
+> A regra prática: se regenerar custa dinheiro, é dado, não cache.
 
 ## Módulo `uteis`
 
@@ -324,6 +342,17 @@ Fluxo para contribuir:
 5. Requisitos de merge: testes passando e README atualizado.
 
 ## Histórico de versões
+
+### 0.4.0
+
+- **Novo módulo `locais`**: decide onde cada arquivo gerado deve morar, pela
+  regra de **a quem ele pertence**. Dados da coleção vão para
+  `<raiz da coleção>/.midias-dados/`; logs e cache vão para as pastas do
+  usuário (`platformdirs`, que resolve as convenções de cada sistema);
+  chaves seguem em `$HOME\.chaves_ia\`.
+- `resolver_pasta_dados` não abandona quem já usava os programas: se a pasta
+  do projeto tiver classificações de uma versão anterior e a coleção ainda
+  não tiver, ela continua sendo usada.
 
 ### 0.3.1
 
