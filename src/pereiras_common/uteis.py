@@ -289,7 +289,7 @@ def expandir_caminho(caminho: str | Path | None) -> Path | None:
 
 
 def ler_chave(caminho_arquivo: str | Path) -> str | None:
-    """Lê uma chave de API de um arquivo de texto e devolve limpa.
+    r"""Lê uma chave de API de um arquivo de texto e devolve limpa.
 
     Regras de segurança (importante!):
 
