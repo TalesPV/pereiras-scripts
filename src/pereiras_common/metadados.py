@@ -57,6 +57,10 @@ EXTS_VIDEO = {".mp4", ".avi", ".mov", ".mkv", ".wmv", ".webm", ".mpg", ".mpeg", 
 EXTS_AUDIO = {".mp3", ".m4a", ".aac", ".ogg", ".opus", ".flac", ".wav", ".wma", ".amr", ".aiff", ".aif"}
 EXTS_OFFICE = {".doc", ".docx", ".xls", ".xlsx", ".ods", ".rtf"}
 EXTS_OUTROS = {".pdf", ".txt", ".url", ".lnk", ".zip", ".htm", ".html", ".js"}
+# Formatos de imagem que PODEM carregar um bloco EXIF. Só neles vale acionar
+# os fallbacks piexif/exifread: em BMP/GIF/PNG/WebP eles releriam o arquivo
+# inteiro para nada e ainda emitem "File format not recognized" no log.
+EXTS_COM_EXIF = {".jpg", ".jpeg", ".tif", ".tiff", ".heic", ".heif"}
 ALL_EXTENSIONS = EXTS_IMAGEM | EXTS_VIDEO | EXTS_AUDIO | EXTS_OFFICE | EXTS_OUTROS
 
 # Tags EXIF IFD0 que guardam datas (números fixos do padrão EXIF):
@@ -482,7 +486,8 @@ def metadados_imagem(
                 datas.extend(datas_png_text(img))
     except Exception as e:
         logger.debug("Falha ao ler metadados da imagem %s: %s", caminho, e)
-    if gps is None:
+    # Fallbacks caros (releem o arquivo): só para formatos que têm EXIF.
+    if gps is None and Path(caminho).suffix.lower() in EXTS_COM_EXIF:
         gps = ler_gps_piexif(caminho) or ler_gps_exifread(caminho)
     return (datas or None), gps
 
@@ -842,6 +847,7 @@ __all__ = [
     "ALL_EXTENSIONS",
     "ANO_MINIMO_PADRAO",
     "EXTS_AUDIO",
+    "EXTS_COM_EXIF",
     "EXTS_IMAGEM",
     "EXTS_OFFICE",
     "EXTS_OUTROS",

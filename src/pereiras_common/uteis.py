@@ -39,7 +39,7 @@ from pathlib import Path
 DIR_CHAVES_PADRAO = Path.home() / ".chaves_ia"
 
 # Nomes padrão dos arquivos de chave dentro de DIR_CHAVES_PADRAO.
-NOME_CHAVE_GEMINI = "chave_gemini.key"
+NOME_CHAVE_GEMINI = "chave_google_gemini.key"
 NOME_CHAVE_OPENAI = "chave_openai_chatgpt.key"
 
 # Caminhos completos padrão (os programas podem sobrescrever via linha de comando).
@@ -263,7 +263,7 @@ def ler_chave(caminho_arquivo: str | Path) -> str | None:
 
     Exemplos::
 
-        ler_chave(Path.home() / ".chaves_ia" / "chave_gemini.key")
+        ler_chave(Path.home() / ".chaves_ia" / "chave_google_gemini.key")
     """
     caminho = Path(caminho_arquivo)
     if not caminho.is_file():

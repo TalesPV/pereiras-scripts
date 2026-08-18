@@ -568,3 +568,34 @@ def test_obter_datas_usa_captura_do_sub_ifd(tmp_path):
     _criar_imagem_exif_sub_ifd(p, "2019:08:09 10:11:12")
     d_min, _, _ = mod.obter_datas(p)
     assert d_min == datetime(2019, 8, 9, 10, 11, 12)
+
+
+# ------------------------- fallbacks EXIF só em formatos que carregam EXIF
+
+def test_metadados_imagem_nao_tenta_exif_em_formato_sem_exif(tmp_path, monkeypatch):
+    """BMP/GIF não carregam EXIF: piexif/exifread só releriam o arquivo à toa.
+
+    Cada tentativa inútil custa uma leitura completa do arquivo (caro em
+    disco de rede) e ainda polui o log com "File format not recognized".
+    """
+    p = tmp_path / "imagem.bmp"
+    Image.new("RGB", (32, 32), (9, 9, 9)).save(p, "BMP")
+
+    def _nao_deveria_ser_chamado(*_a, **_k):
+        raise AssertionError("fallback EXIF chamado para formato sem EXIF")
+
+    monkeypatch.setattr(mod, "ler_gps_piexif", _nao_deveria_ser_chamado)
+    monkeypatch.setattr(mod, "ler_gps_exifread", _nao_deveria_ser_chamado)
+    datas, gps = metadados_imagem(p)
+    assert gps is None
+
+
+def test_metadados_imagem_ainda_tenta_fallback_em_jpeg(tmp_path, monkeypatch):
+    """JPEG carrega EXIF: o fallback continua valendo quando o Pillow falha."""
+    p = tmp_path / "foto.jpg"
+    Image.new("RGB", (32, 32), (9, 9, 9)).save(p, "JPEG")
+    chamados = []
+    monkeypatch.setattr(mod, "ler_gps_piexif", lambda c: chamados.append("piexif"))
+    monkeypatch.setattr(mod, "ler_gps_exifread", lambda c: chamados.append("exifread"))
+    metadados_imagem(p)
+    assert "piexif" in chamados

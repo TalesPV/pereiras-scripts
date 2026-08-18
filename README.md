@@ -45,7 +45,7 @@ Produto atual do pacote:
 | `nomeacao` | **Nome padrão de mídia** e pastas de destino por data (formato abaixo). |
 | `geolocalizacao` | Cidade por GPS (Nominatim/OpenStreetMap, com cache local). |
 | `ia` | Análise de **fotos** com IA (Gemini ou OpenAI): título snake_case, resumo, nível de legalidade 1-5, motivo, modelo e tokens. |
-| `uteis` | `para_snake_case`, `hash_curto_6` (hash alfanumérico de 6 dígitos) e `ler_chave` (chaves de API fora do repositório). |
+| `uteis` | `para_snake_case`, `sha256_arquivo`, `hash_curto_6` (hash alfanumérico de 6 dígitos), `normalizar_titulo` e cache JSONL (`carregar_cache_jsonl`/`gravar_cache_jsonl`); `ler_chave` (chaves de API fora do repositório). |
 
 ### Formato padrão do nome das mídias
 
@@ -73,13 +73,13 @@ pereiras-scripts.github/
 │   ├── metadados.py        # datas e GPS + obter_datas + classificar_sufixo
 │   ├── nomeacao.py         # datas de nome, nome padrão de mídia e pastas
 │   ├── geolocalizacao.py   # cidade por GPS (Nominatim, cache local)
-│   ├── uteis.py            # texto, hash curto e chaves (sem dependências entre si)
-│   └── ia.py               # análise de fotos com IA (usa uteis.para_snake_case)
+│   ├── uteis.py            # texto, hashes, cache JSONL e chaves (sem dependências entre si)
+│   └── ia.py               # análise de fotos com IA (usa uteis.normalizar_titulo)
 └── tests/
-    ├── test_metadados.py   # 40+ testes (inclusive obter_datas/classificar_sufixo)
+    ├── test_metadados.py   # datas/GPS, obter_datas, classificar_sufixo, sub-IFD EXIF
     ├── test_nomeacao.py    # datas, nome padrão e pastas de destino
     ├── test_geolocalizacao.py  # geocodificação com rede simulada
-    ├── test_uteis.py       # texto/hash/chaves
+    ├── test_uteis.py       # texto/hashes/cache JSONL/chaves
     └── test_ia.py          # análise com IA (clientes falsos)
 ```
 
@@ -92,7 +92,7 @@ nomeacao.py ──── metadados.py ── geolocalizacao.py ── __init__.p
 
 - `metadados` importa as funções de data de `nomeacao` (fonte única).
 - `geolocalizacao` importa `uteis.para_snake_case`.
-- `ia` importa `uteis.para_snake_case`.
+- `ia` importa `uteis.normalizar_titulo`.
 - Os projetos clientes importam de `pereiras_common` (ou dos submódulos).
 
 ## Módulo `metadados`
@@ -115,7 +115,7 @@ Fontes por tipo de arquivo:
 
 | Tipo | Data | GPS |
 | --- | --- | --- |
-| Imagem | EXIF (36867/36868/306), XMP, texto PNG | EXIF (IFD 0x8825), XMP, fallbacks piexif/exifread |
+| Imagem | EXIF **IFD0 e sub-IFD 0x8769** (36867 DateTimeOriginal, 36868, 306), XMP, texto PNG | EXIF (IFD 0x8825), XMP, fallbacks piexif/exifread (só em JPEG/TIFF/HEIC) |
 | Vídeo | `creation_time` (ffmpeg); fallback ©day (mutagen) | `location`/©xyz ISO 6709 (ffmpeg); fallback ©xyz (mutagen) |
 | Áudio | ID3 (TDRC/TDOR/TYER), ©day, comentários Vorbis (mutagen) | ©xyz (MP4/M4A) |
 | Qualquer | exiftool (opcional, se instalado) | exiftool |
@@ -123,7 +123,7 @@ Fontes por tipo de arquivo:
 
 Funções de baixo nível (também exportadas): `metadados_imagem`,
 `metadados_video`, `metadados_audio`, `metadados_exiftool`,
-`data_filesystem`, `obter_gps`, `parsear_data_iso`,
+`data_filesystem`, `datas_exif`, `obter_gps`, `parsear_data_iso`,
 `parsear_iso6709`, `gms_para_decimal`, `ler_gps_exif`,
 `registrar_heif`, `classificar_tipo`.
 
@@ -163,7 +163,11 @@ padrão `YYYY_MM_DD_HHhMMmSSs-YYYY_MM_DD_HHhMMmSSs-cidade-hash6-titulo.ext`
 | Função | Assinatura | Descrição |
 | --- | --- | --- |
 | `para_snake_case` | `(texto) -> str` | "São Paulo" -> "sao_paulo"; sem caracteres especiais; nunca vazio ("sem_nome"). |
-| `hash_curto_6` | `(caminho) -> str \| None` | Hash alfanumérico (0-9a-z) de 6 caracteres do conteúdo do arquivo, para compor nomes. |
+| `sha256_arquivo` | `(caminho) -> str \| None` | SHA-256 hexadecimal do conteúdo (chave dos caches de IA). Lê em blocos de 1 MB. |
+| `hash_curto_6` | `(caminho, *, digest=None) -> str \| None` | Hash alfanumérico (0-9a-z) de 6 caracteres do conteúdo, para compor nomes. Com `digest` (SHA-256 já calculado) **não relê o arquivo**. |
+| `normalizar_titulo` | `(texto, max_palavras=5) -> str` | Limpa o título devolvido pela IA (aspas/markdown), corta em 5 palavras e converte para snake_case; `""` se não sobrar nada. |
+| `carregar_cache_jsonl` | `(cache_path, chave="sha256") -> dict` | Lê um cache append-only JSONL como `{chave: registro}`; ignora linhas corrompidas. |
+| `gravar_cache_jsonl` | `(registro, cache_path) -> None` | Anexa um registro ao cache JSONL (falhas de I/O são silenciosas de propósito). |
 | `ler_chave` | `(caminho_arquivo) -> str \| None` | Lê uma chave de API de arquivo (fora do repositório), limpa espaços e valida tamanho mínimo. |
 
 Constantes: `DIR_CHAVES_PADRAO` (`~/.chaves_ia`), `CHAVE_GEMINI_PADRAO`,
@@ -220,7 +224,7 @@ Política adotada (recomendada):
 
 - As chaves NUNCA são escritas no código nem versionadas no git.
 - Padrão: arquivos na pasta do usuário `~/.chaves_ia/`:
-  - `chave_gemini.key` (Gemini)
+  - `chave_google_gemini.key` (Gemini)
   - `chave_openai_chatgpt.key` (OpenAI)
 - Cada programa cliente aceita o caminho do arquivo pela linha de
   comando (`--chave-gemini`/`--chave-openai`), sempre com o padrão acima.
@@ -275,10 +279,29 @@ Fluxo para contribuir:
 4. Abra o PR para `main` descrevendo: problema, solução, testes e impactos.
 5. Requisitos de merge: testes passando e README atualizado.
 
+## Histórico de versões
+
+### 0.2.0
+
+- **Correção**: a data de captura (`DateTimeOriginal`, tag 36867) vive no
+  sub-IFD EXIF `0x8769`, e não no IFD0 devolvido por `Image.getexif()`.
+  A leitura antiga só encontrava a tag 306 (`DateTime`, última alteração).
+  Quando a câmera grava as duas iguais nada mudava, mas em fotos editadas
+  (306 = data da edição) ou sem a tag 306 a data de captura era perdida e
+  o arquivo caía na data do **sistema de arquivos**. Nova função pública:
+  `datas_exif(exif, ano_minimo)`.
+- **Correção**: os fallbacks piexif/exifread só são acionados em formatos
+  que carregam EXIF (`EXTS_COM_EXIF`). Antes, cada BMP/GIF/PNG era relido
+  duas vezes à toa e o log enchia de "File format not recognized".
+- **Novo**: `sha256_arquivo`, `normalizar_titulo`, `carregar_cache_jsonl` e
+  `gravar_cache_jsonl` (migrados dos dois projetos clientes).
+- **Novo**: `hash_curto_6(caminho, *, digest=...)` reaproveita um SHA-256 já
+  calculado — uma leitura por arquivo em vez de duas.
+
 ## ToDos
 
-- [ ] Migrar funções duplicadas restantes dos clientes (sha256_arquivo,
-      cache de títulos) para este pacote.
+- [x] Migrar funções duplicadas restantes dos clientes (`sha256_arquivo`,
+      cache JSONL, `normalizar_titulo`) para este pacote. **Feito na 0.2.0.**
 - [ ] `analisar_foto` para **vídeos** (frames) e **áudios**.
 - [ ] Suporte a mais tipos de IA (`tipo_ia`) no futuro.
 - [ ] Publicar no PyPI quando estabilizar (hoje: instalação via git).
