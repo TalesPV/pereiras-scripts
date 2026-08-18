@@ -325,6 +325,15 @@ Fluxo para contribuir:
 
 ## Histórico de versões
 
+### 0.3.1
+
+- **Correção**: `dentro_do_periodo` passa a tolerar datas até
+  `TOLERANCIA_FUTURO` (1 dia) à frente do relógio. A comparação anterior era
+  exata, então um arquivo cujo carimbo de tempo estivesse microssegundos no
+  futuro perdia a data e caía em "sem_data". Isso acontece de verdade em
+  disco de rede (Proton Drive, NAS, fuso do servidor) — e foi justamente o
+  que a CI pegou na primeira execução.
+
 ### 0.3.0
 
 - **Novo**: `expandir_caminho` resolve `~`, `$HOME` e `%USERPROFILE%` nos

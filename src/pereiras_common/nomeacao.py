@@ -27,7 +27,7 @@ A pasta de destino por data é montada por :func:`montar_pasta_destino`
 from __future__ import annotations
 
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 # Ano mais antigo aceito nas datas (arquivos anteriores são ignorados).
@@ -35,6 +35,14 @@ ANO_MINIMO_PADRAO = 1980
 
 # Limite de tamanho do nome gerado (segurança para sistemas de arquivos).
 MAX_COMPRIMENTO_NOME = 240
+
+# Quanto uma data pode estar "no futuro" e ainda ser aceita.
+# Por que existe: em disco de rede (Proton Drive, NAS) e em máquinas de CI o
+# carimbo de tempo do arquivo costuma ficar à frente do relógio local — às
+# vezes microssegundos, às vezes horas (fuso do servidor). Sem essa folga o
+# arquivo perde a data e vai parar em "sem_data". Um dia é generoso o
+# bastante para o fuso e curto o bastante para barrar datas absurdas.
+TOLERANCIA_FUTURO = timedelta(days=1)
 
 # Abreviações de meses aceitas no nome do arquivo (PT e EN).
 MESES = {
@@ -48,8 +56,16 @@ RE_TITULO = re.compile(r"^[a-z0-9]+(?:_[a-z0-9]+)*$")
 
 
 def dentro_do_periodo(dt, ano_minimo: int = ANO_MINIMO_PADRAO) -> bool:
-    """Indica se a data é plausível (não nula, não antiga demais, não futura)."""
-    return dt is not None and ano_minimo <= dt.year and dt <= datetime.now()
+    """Indica se a data é plausível: não nula, não antiga demais, não futura.
+
+    "Não futura" tem uma folga de :data:`TOLERANCIA_FUTURO`: um arquivo
+    gravado com o relógio segundos ou horas adiantado é jitter de relógio,
+    não data inválida — e descartá-lo faria o arquivo cair em "sem_data".
+    Datas muito à frente (mês que vem, 2099) continuam recusadas.
+    """
+    if dt is None or dt.year < ano_minimo:
+        return False
+    return dt <= datetime.now() + TOLERANCIA_FUTURO
 
 
 def montar_dt(ano, mes, dia, hora=0, minuto=0, segundo=0,
@@ -259,6 +275,7 @@ def montar_pasta_destino(
 __all__ = [
     "ANO_MINIMO_PADRAO",
     "MAX_COMPRIMENTO_NOME",
+    "TOLERANCIA_FUTURO",
     "dentro_do_periodo",
     "extrair_data_nome",
     "formatar_data",

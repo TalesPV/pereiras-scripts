@@ -7,7 +7,7 @@ Formato padrão do nome das mídias (fotos, vídeos e áudios):
     YYYY_MM_DD_HHhMMmSSs-YYYY_MM_DD_HHhMMmSSs-cidade-hash6-titulo.ext
 """
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -194,3 +194,27 @@ def test_preservar_nome_original_sem_hash6():
 def test_preservar_nome_original_sem_data():
     """Sem data não há nome alvo: nada a comparar."""
     assert preservar_nome_original("qualquer.jpg", None, None, "sem_gps") is False
+
+
+# --------------------------- tolerância a relógio adiantado (skew)
+
+def test_dentro_do_periodo_tolera_pequeno_adiantamento():
+    """Arquivo gravado 2 s "no futuro" é jitter de relógio, não data inválida.
+
+    Acontece de verdade em disco de rede (Proton Drive, NAS) e em runners de
+    CI: o carimbo do arquivo fica microssegundos à frente do relógio local.
+    Sem tolerância, o arquivo perde a data e cai em "sem_data".
+    """
+    assert dentro_do_periodo(datetime.now() + timedelta(seconds=2)) is True
+    assert dentro_do_periodo(datetime.now() + timedelta(hours=3)) is True
+
+
+def test_dentro_do_periodo_ainda_rejeita_futuro_absurdo():
+    """Tolerar jitter não pode virar aceitar qualquer data futura."""
+    assert dentro_do_periodo(datetime.now() + timedelta(days=30)) is False
+    assert dentro_do_periodo(datetime(2099, 1, 1)) is False
+
+
+def test_dentro_do_periodo_ainda_rejeita_antes_do_ano_minimo():
+    assert dentro_do_periodo(datetime(1970, 1, 1)) is False
+    assert dentro_do_periodo(datetime(1970, 1, 1), ano_minimo=1960) is True

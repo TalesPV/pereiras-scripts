@@ -180,7 +180,7 @@ def test_normalizar_titulo(entrada, esperado):
     r"$USERPROFILE\.chaves_ia\chave_google_gemini.key",
 ])
 def test_expandir_caminho_resolve_pasta_do_usuario(entrada):
-    """No Windows o usuário digita $HOME\...; entre aspas simples ele chega literal."""
+    r"""No Windows o usuário digita $HOME\...; entre aspas simples ele chega literal."""
     esperado = Path.home() / ".chaves_ia" / "chave_google_gemini.key"
     assert expandir_caminho(entrada) == esperado
 
