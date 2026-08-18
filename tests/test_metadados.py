@@ -10,6 +10,7 @@ import pytest
 from PIL import Image
 
 import pereiras_common.metadados as mod
+from pereiras_common.nomeacao import TOLERANCIA_FUTURO
 from pereiras_common.metadados import (
     ALL_EXTENSIONS,
     EXTS_AUDIO,
@@ -369,7 +370,10 @@ def test_data_filesystem(tmp_path):
     caminho.write_text("x", encoding="utf-8")
     dt = data_filesystem(caminho)
     assert dt is not None
-    assert datetime(2020, 1, 1) <= dt <= datetime.now()
+    # A folga é a mesma que o pacote promete (TOLERANCIA_FUTURO): comparar
+    # com datetime.now() exato falha quando o carimbo do arquivo fica
+    # microssegundos à frente do relógio lido em seguida.
+    assert datetime(2020, 1, 1) <= dt <= datetime.now() + TOLERANCIA_FUTURO
 
 
 def test_data_filesystem_inexistente(tmp_path):
@@ -491,7 +495,7 @@ def test_obter_datas_outro_usa_filesystem(tmp_path):
     caminho.write_text("x", encoding="utf-8")
     d_min, d_max, _ = obter_datas(caminho)
     assert d_min == d_max
-    assert datetime(2020, 1, 1) <= d_min <= datetime.now()
+    assert datetime(2020, 1, 1) <= d_min <= datetime.now() + TOLERANCIA_FUTURO
 
 
 def test_obter_datas_sem_nenhuma_fonte(tmp_path, monkeypatch):
