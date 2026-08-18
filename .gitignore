@@ -13,3 +13,13 @@ build/
 dist/
 .idea/
 .vscode/
+
+# ===== DADOS GERADOS EM CADA AMBIENTE (nunca versionar) =====
+# O pacote em si não gera nada, mas as funções de cache (carregar_cache_jsonl,
+# salvar_cache_gps) escrevem onde o chamador mandar. Regra preventiva para que
+# um teste ou experimento não deixe dados de execução no repositório.
+cache_*.json
+cache_*.jsonl
+classificacao_*.csv
+classificacao_*.jsonl
+logs/
