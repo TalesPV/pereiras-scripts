@@ -49,7 +49,7 @@ from google.genai import types
 from openai import OpenAI
 from PIL import Image
 
-from .uteis import para_snake_case
+from .uteis import normalizar_titulo
 
 logger = logging.getLogger(__name__)
 
@@ -86,10 +86,6 @@ PROMPT_ANALISE_FOTO = (
 
 # Padrão para remover cercas de markdown (```json ... ```) da resposta.
 _RE_CERCA_MARKDOWN = re.compile(r"^\s*```(?:json)?\s*|\s*```\s*$", re.IGNORECASE)
-
-# Número máximo de palavras do título (mantém nomes de arquivo curtos).
-MAX_PALAVRAS_TITULO = 5
-
 
 # ------------------------------------------------------------- tipos
 
@@ -154,17 +150,6 @@ def _preparar_imagem_bytes(
         raise ErroAnaliseIA(f"não foi possível ler a imagem {caminho}: {e}") from e
 
 
-def _normalizar_titulo(texto: object) -> str:
-    """Limpa o título devolvido pela IA e limita a 5 palavras em snake_case."""
-    t = str(texto or "").strip().strip('"`*#')
-    palavras = t.split()
-    if len(palavras) > MAX_PALAVRAS_TITULO:
-        t = " ".join(palavras[:MAX_PALAVRAS_TITULO])
-    t = para_snake_case(t)
-    # "sem_nome" significa que não sobrou texto útil: devolvemos vazio.
-    return t if t != "sem_nome" else ""
-
-
 def _extrair_json_resposta(texto: object) -> dict:
     """Extrai o primeiro objeto JSON válido da resposta da IA.
 
@@ -211,7 +196,7 @@ def _montar_analise(dados: dict, modelo: str) -> AnaliseFoto:
     if not 1 <= nivel <= 5:
         raise ErroAnaliseIA(f"índice de legalidade fora da faixa 1-5: {nivel!r}")
     return AnaliseFoto(
-        titulo=_normalizar_titulo(dados.get("titulo_resumo")),
+        titulo=normalizar_titulo(dados.get("titulo_resumo")),
         resumo=str(dados.get("descricao_completa") or "").strip(),
         nivel=nivel,
         motivo=str(dados.get("motivo") or "").strip(),

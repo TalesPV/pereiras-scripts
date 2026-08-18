@@ -8,7 +8,8 @@ Contém funções reutilizáveis por vários scripts Python:
   destino (formato YYYY_MM_DD_HHhMMmSSs-...-cidade-hash6-titulo.ext).
 - :mod:`pereiras_common.ia`: análise de fotos com IA (Gemini/OpenAI).
 - :mod:`pereiras_common.geolocalizacao`: cidade por GPS (Nominatim).
-- :mod:`pereiras_common.uteis`: texto (snake_case), hash curto e chaves.
+- :mod:`pereiras_common.uteis`: texto (snake_case), SHA-256, hash curto,
+  título normalizado, cache JSONL e chaves de API.
 """
 
 from .geolocalizacao import (
@@ -58,9 +59,14 @@ from .uteis import (
     CHAVE_GEMINI_PADRAO,
     CHAVE_OPENAI_PADRAO,
     DIR_CHAVES_PADRAO,
+    MAX_PALAVRAS_TITULO,
+    carregar_cache_jsonl,
+    gravar_cache_jsonl,
     hash_curto_6,
     ler_chave,
+    normalizar_titulo,
     para_snake_case,
+    sha256_arquivo,
 )
 
 __all__ = [
@@ -77,9 +83,11 @@ __all__ = [
     "EXTS_VIDEO",
     "ErroAnaliseIA",
     "MAX_COMPRIMENTO_NOME",
+    "MAX_PALAVRAS_TITULO",
     "Metadados",
     "analisar_foto",
     "carregar_cache_gps",
+    "carregar_cache_jsonl",
     "cidade_ou_coordenadas",
     "cidade_por_gps",
     "classificar_sufixo",
@@ -90,6 +98,7 @@ __all__ = [
     "extrair_metadados",
     "formatar_data",
     "gms_para_decimal",
+    "gravar_cache_jsonl",
     "hash_curto_6",
     "ler_chave",
     "ler_gps_exif",
@@ -100,6 +109,7 @@ __all__ = [
     "montar_dt",
     "montar_nome_midia",
     "montar_pasta_destino",
+    "normalizar_titulo",
     "obter_datas",
     "obter_gps",
     "para_snake_case",
@@ -108,5 +118,6 @@ __all__ = [
     "parsear_iso6709",
     "registrar_heif",
     "salvar_cache_gps",
+    "sha256_arquivo",
     "titulo_valido",
 ]

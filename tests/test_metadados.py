@@ -522,3 +522,49 @@ def test_classificar_sufixo(nome, ext, tamanho, min_size, esperado):
     from pereiras_common.metadados import classificar_sufixo
     caminho = Path("x") / nome
     assert classificar_sufixo(caminho, tamanho=tamanho, min_size_low_res=min_size) == esperado
+
+
+# --------------------------------- data no sub-IFD EXIF (câmeras reais)
+
+def _criar_imagem_exif_sub_ifd(caminho, datetime_original="2021:06:15 12:34:56",
+                               datetime_ifd0=None):
+    """Cria um JPEG como as câmeras reais fazem: DateTimeOriginal no sub-IFD.
+
+    O padrão EXIF guarda DateTimeOriginal (36867) e DateTimeDigitized
+    (36868) dentro do IFD apontado por 0x8769 — e NÃO no IFD0. Só a tag
+    306 (DateTime) fica no IFD0. Ler apenas o IFD0 perde a data de captura.
+    """
+    img = Image.new("RGB", (64, 64), (10, 20, 30))
+    exif = Image.Exif()
+    if datetime_ifd0:
+        exif[306] = datetime_ifd0
+    sub = exif.get_ifd(0x8769)
+    sub[36867] = datetime_original
+    exif[0x8769] = sub
+    img.save(caminho, exif=exif)
+
+
+def test_metadados_imagem_le_data_do_sub_ifd_exif(tmp_path):
+    """A data de captura (DateTimeOriginal) vive no sub-IFD 0x8769, não no IFD0."""
+    p = tmp_path / "camera.jpg"
+    _criar_imagem_exif_sub_ifd(p, "2021:06:15 12:34:56")
+    datas, _ = metadados_imagem(p)
+    assert datas is not None, "nenhuma data lida do sub-IFD EXIF"
+    assert datetime(2021, 6, 15, 12, 34, 56) in datas
+
+
+def test_metadados_imagem_prefere_captura_a_data_de_edicao(tmp_path):
+    """Com 306 (edição) posterior à captura, a captura precisa estar entre as datas."""
+    p = tmp_path / "editada.jpg"
+    _criar_imagem_exif_sub_ifd(p, "2015:01:02 03:04:05", datetime_ifd0="2024:11:20 08:00:00")
+    datas, _ = metadados_imagem(p)
+    assert datetime(2015, 1, 2, 3, 4, 5) in datas
+    assert min(datas) == datetime(2015, 1, 2, 3, 4, 5)
+
+
+def test_obter_datas_usa_captura_do_sub_ifd(tmp_path):
+    """obter_datas devolve a data de captura, não a data do sistema de arquivos."""
+    p = tmp_path / "foto_sem_data_no_nome.jpg"
+    _criar_imagem_exif_sub_ifd(p, "2019:08:09 10:11:12")
+    d_min, _, _ = mod.obter_datas(p)
+    assert d_min == datetime(2019, 8, 9, 10, 11, 12)

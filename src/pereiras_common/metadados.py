@@ -66,6 +66,9 @@ ALL_EXTENSIONS = EXTS_IMAGEM | EXTS_VIDEO | EXTS_AUDIO | EXTS_OFFICE | EXTS_OUTR
 TAG_DATETIME_ORIGINAL = 36867
 TAG_CREATE_DATE = 36868
 TAG_MODIFY_DATE = 306
+# 0x8769 = ponteiro para o sub-IFD EXIF, onde ficam 36867/36868. Ler apenas
+# o IFD0 (o que Image.getexif() devolve) NÃO encontra a data de captura.
+IFD_EXIF = 0x8769
 # 0x8825 = ponteiro para o bloco GPS dentro do EXIF.
 IFD_GPS = 0x8825
 
@@ -229,6 +232,42 @@ def parsear_iso6709(texto: object) -> tuple[float, float] | None:
     except ValueError:
         return None
     return validar_coordenada(lat, lon)
+
+
+def datas_exif(exif, ano_minimo: int = ANO_MINIMO_PADRAO) -> list[datetime]:
+    """Datas de um objeto Exif do Pillow, do IFD0 E do sub-IFD EXIF (0x8769).
+
+    Por que os dois? O padrão EXIF guarda a data de CAPTURA
+    (36867 DateTimeOriginal) e a de digitalização (36868) dentro do
+    sub-IFD 0x8769; só a tag 306 (DateTime, última alteração) fica no
+    IFD0. ``Image.getexif()`` devolve apenas o IFD0 — quem lê só ele
+    perde a data de captura e acaba usando a data de edição ou a do
+    sistema de arquivos.
+    """
+    datas: list[datetime] = []
+    if exif is None:
+        return datas
+    # Fontes na ordem de confiança: sub-IFD (captura) e depois IFD0 (edição).
+    try:
+        sub_ifd = exif.get_ifd(IFD_EXIF) or {}
+    except Exception:
+        sub_ifd = {}
+    fontes = (
+        (sub_ifd, (TAG_DATETIME_ORIGINAL, TAG_CREATE_DATE)),
+        (exif, (TAG_DATETIME_ORIGINAL, TAG_CREATE_DATE, TAG_MODIFY_DATE)),
+    )
+    for origem, tags in fontes:
+        for tag in tags:
+            try:
+                valor = origem.get(tag)
+            except Exception:
+                continue
+            if not valor:
+                continue
+            dt = parsear_data_exif(valor, ano_minimo)
+            if dt and dt not in datas:
+                datas.append(dt)
+    return datas
 
 
 def ler_gps_exif(exif) -> tuple[float, float] | None:
@@ -434,12 +473,7 @@ def metadados_imagem(
     try:
         with Image.open(caminho) as img:
             exif = img.getexif()
-            for tag in (TAG_DATETIME_ORIGINAL, TAG_CREATE_DATE, TAG_MODIFY_DATE):
-                valor = exif.get(tag)
-                if valor:
-                    dt = parsear_data_exif(valor)
-                    if dt:
-                        datas.append(dt)
+            datas.extend(datas_exif(exif))
             gps = ler_gps_exif(exif)
             if gps is None:
                 gps = gps_xmp(img)
@@ -816,6 +850,7 @@ __all__ = [
     "classificar_sufixo",
     "classificar_tipo",
     "data_filesystem",
+    "datas_exif",
     "dentro_do_periodo",
     "extrair_metadados",
     "gms_para_decimal",

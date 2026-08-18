@@ -5,11 +5,17 @@
 import re
 from pathlib import Path
 
+import pytest
+
 from pereiras_common.uteis import (
     DIR_CHAVES_PADRAO,
+    carregar_cache_jsonl,
+    gravar_cache_jsonl,
     hash_curto_6,
     ler_chave,
+    normalizar_titulo,
     para_snake_case,
+    sha256_arquivo,
 )
 
 
@@ -85,3 +91,77 @@ def test_ler_chave_muito_curta(tmp_path):
 
 def test_dir_chaves_padrao_no_home():
     assert DIR_CHAVES_PADRAO == Path.home() / ".chaves_ia"
+
+
+# ------------------------------------------------- sha256 e hash a partir dele
+
+def test_sha256_arquivo_deterministico(tmp_path):
+    """Mesmo conteúdo -> mesmo SHA-256; conteúdo diferente -> hash diferente."""
+    a = tmp_path / "a.bin"
+    b = tmp_path / "b.bin"
+    c = tmp_path / "c.bin"
+    a.write_bytes(b"conteudo identico")
+    b.write_bytes(b"conteudo identico")
+    c.write_bytes(b"outro conteudo")
+    assert sha256_arquivo(a) == sha256_arquivo(b)
+    assert sha256_arquivo(a) != sha256_arquivo(c)
+    assert len(sha256_arquivo(a)) == 64
+
+
+def test_sha256_arquivo_inexistente(tmp_path):
+    assert sha256_arquivo(tmp_path / "nao_existe.bin") is None
+
+
+def test_hash_curto_6_aceita_digest_pronto(tmp_path):
+    """Com o SHA-256 já calculado, hash_curto_6 não lê o arquivo de novo."""
+    p = tmp_path / "foto.jpg"
+    p.write_bytes(b"conteudo de teste")
+    digest = sha256_arquivo(p)
+    assert hash_curto_6(p, digest=digest) == hash_curto_6(p)
+    # O caminho nem precisa existir quando o digest é informado.
+    assert hash_curto_6(tmp_path / "sumiu.jpg", digest=digest) == hash_curto_6(p)
+
+
+# ------------------------------------------------------------ cache JSONL
+
+def test_cache_jsonl_grava_e_carrega(tmp_path):
+    """O cache append-only devolve um dict indexado pela chave escolhida."""
+    cache_path = tmp_path / "cache.jsonl"
+    gravar_cache_jsonl({"sha256": "abc", "titulo": "praia_ao_por_do_sol"}, cache_path)
+    gravar_cache_jsonl({"sha256": "def", "titulo": "festa_de_aniversario"}, cache_path)
+    cache = carregar_cache_jsonl(cache_path)
+    assert cache["abc"]["titulo"] == "praia_ao_por_do_sol"
+    assert cache["def"]["titulo"] == "festa_de_aniversario"
+
+
+def test_cache_jsonl_ignora_linhas_corrompidas(tmp_path):
+    """Linha inválida não derruba a leitura: o cache é atalho, não fonte de verdade."""
+    cache_path = tmp_path / "cache.jsonl"
+    cache_path.write_text(
+        '{"sha256": "ok", "titulo": "valido"}\n'
+        "{ isto nao e json }\n"
+        "\n"
+        '{"sem_chave": 1}\n',
+        encoding="utf-8",
+    )
+    cache = carregar_cache_jsonl(cache_path)
+    assert list(cache) == ["ok"]
+
+
+def test_cache_jsonl_inexistente_devolve_vazio(tmp_path):
+    assert carregar_cache_jsonl(tmp_path / "nunca_gravado.jsonl") == {}
+
+
+# ------------------------------------------------------------- normalizar_titulo
+
+@pytest.mark.parametrize("entrada,esperado", [
+    ("Festa de Aniversário", "festa_de_aniversario"),
+    ('  "Praia ao Pôr do Sol"  ', "praia_ao_por_do_sol"),
+    ("uma frase bem longa com mais de cinco palavras", "uma_frase_bem_longa_com"),
+    ("", ""),
+    ("!!!", ""),
+    (None, ""),
+])
+def test_normalizar_titulo(entrada, esperado):
+    """Título da IA vira snake_case de no máximo 5 palavras (vazio se não sobrar nada)."""
+    assert normalizar_titulo(entrada) == esperado
