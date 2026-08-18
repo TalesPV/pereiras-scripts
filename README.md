@@ -183,7 +183,8 @@ atual: 1997_..-1997_..-sem_gps.BMP                    -> renomeado (ganha o hash
 | `carregar_cache_jsonl` | `(cache_path, chave="sha256") -> dict` | Lê um cache append-only JSONL como `{chave: registro}`; ignora linhas corrompidas. |
 | `gravar_cache_jsonl` | `(registro, cache_path) -> None` | Anexa um registro ao cache JSONL (falhas de I/O são silenciosas de propósito). |
 | `expandir_caminho` | `(caminho) -> Path \| None` | Resolve `~`, `$HOME` e `%USERPROFILE%` no caminho digitado. `None` entra, `None` sai. |
-| `ler_chave` | `(caminho_arquivo) -> str \| None` | Lê uma chave de API de arquivo (fora do repositório), limpa espaços e valida tamanho mínimo. |
+| `ler_chave` | `(caminho_arquivo, tipo=None) -> str \| None` | Lê uma chave de API de arquivo (fora do repositório), limpa espaços e valida tamanho mínimo. Apontando para uma **pasta** com `tipo`, localiza o arquivo lá dentro. |
+| `localizar_chave` | `(diretorio, tipo) -> Path \| None` | Acha o arquivo de chave do provedor aceitando variações de nome (ver abaixo). |
 
 Constantes: `DIR_CHAVES_PADRAO` (`$HOME\.chaves_ia`), `CHAVE_GEMINI_PADRAO`,
 `CHAVE_OPENAI_PADRAO`.
@@ -247,6 +248,16 @@ Política adotada (recomendada):
 - Os caminhos aceitam `~`, `$HOME` e `%USERPROFILE%` (`expandir_caminho`).
   Isso importa no PowerShell: entre **aspas simples** ele não expande
   `$HOME`, e o texto chegaria literal ao programa.
+- **O nome do arquivo é flexível.** Sem `--chave-*`, os programas procuram na
+  pasta um arquivo cujo nome cite o provedor. Todos estes funcionam:
+
+  ```
+  chave_google_gemini.key      CHAVE_GOOGLE_GEMINI.txt      ._CHAVE_GOOGLE_GEMINI.txt
+  chave_openai_chatgpt.key     CHAVE_OPENAI_CHATGPT.txt     ._CHAVE_OPENAI_CHATGPT.txt
+  ```
+
+  Arquivos com menos de 10 caracteres são ignorados, para que um arquivo
+  vazio na pasta não mascare a chave verdadeira.
 - A chave em si viaja apenas como parâmetro de função (nunca aparece em logs).
 
 > Nota de segurança: evite passar a chave como texto puro na linha de
@@ -320,6 +331,8 @@ Fluxo para contribuir:
   caminhos digitados (o PowerShell não expande `$HOME` entre aspas simples).
 - **Novo**: `preservar_nome_original` evita apagar o título já gravado no
   nome quando a execução roda sem IA.
+- **Novo**: `localizar_chave` encontra a chave por variação de nome dentro da
+  pasta, em vez de exigir um nome exato de arquivo.
 
 ## ToDos
 

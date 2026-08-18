@@ -13,6 +13,7 @@ from pereiras_common.uteis import (
     expandir_caminho,
     gravar_cache_jsonl,
     hash_curto_6,
+    localizar_chave,
     ler_chave,
     normalizar_titulo,
     para_snake_case,
@@ -207,3 +208,53 @@ def test_ler_chave_expande_notacao_do_usuario(tmp_path, monkeypatch):
     for notacao in (r"$HOME\.chaves_ia\chave_google_gemini.key",
                     "~/.chaves_ia/chave_google_gemini.key"):
         assert ler_chave(notacao) == "CHAVE-DE-TESTE-1234567890", notacao
+
+
+# ------------------------- localizar a chave por variação de nome do arquivo
+
+@pytest.mark.parametrize("nome_no_disco", [
+    "chave_google_gemini.key",
+    "CHAVE_GOOGLE_GEMINI.txt",
+    "._CHAVE_GOOGLE_GEMINI.txt",
+    "chave_google_gemini.txt",
+    "Chave_Google_Gemini.KEY",
+])
+def test_localizar_chave_aceita_variacoes_de_nome(tmp_path, nome_no_disco):
+    """O usuário nomeia o arquivo como quiser; o programa encontra assim mesmo."""
+    pasta = tmp_path / ".chaves_ia"
+    pasta.mkdir()
+    (pasta / nome_no_disco).write_text("CHAVE-DE-TESTE-1234567890", encoding="utf-8")
+    achado = localizar_chave(pasta, "gemini")
+    assert achado is not None, f"não encontrou {nome_no_disco}"
+    assert achado.name == nome_no_disco
+
+
+def test_localizar_chave_distingue_os_provedores(tmp_path):
+    """Com as duas chaves na pasta, cada provedor pega a sua."""
+    pasta = tmp_path / ".chaves_ia"
+    pasta.mkdir()
+    (pasta / "._CHAVE_GOOGLE_GEMINI.txt").write_text("G" * 20, encoding="utf-8")
+    (pasta / "._CHAVE_OPENAI_CHATGPT.txt").write_text("O" * 20, encoding="utf-8")
+    assert localizar_chave(pasta, "gemini").name == "._CHAVE_GOOGLE_GEMINI.txt"
+    assert localizar_chave(pasta, "openai").name == "._CHAVE_OPENAI_CHATGPT.txt"
+
+
+def test_localizar_chave_pasta_inexistente(tmp_path):
+    assert localizar_chave(tmp_path / "nao_existe", "gemini") is None
+
+
+def test_localizar_chave_ignora_arquivo_curto_demais(tmp_path):
+    """Arquivo vazio ou com lixo não conta como chave."""
+    pasta = tmp_path / ".chaves_ia"
+    pasta.mkdir()
+    (pasta / "chave_google_gemini.key").write_text("xx", encoding="utf-8")
+    assert localizar_chave(pasta, "gemini") is None
+
+
+def test_ler_chave_encontra_pelo_diretorio(tmp_path):
+    """Apontando para a PASTA (não para o arquivo), ler_chave localiza a chave."""
+    pasta = tmp_path / ".chaves_ia"
+    pasta.mkdir()
+    (pasta / "._CHAVE_OPENAI_CHATGPT.txt").write_text("CHAVE-OPENAI-0987654321",
+                                                     encoding="utf-8")
+    assert ler_chave(pasta, tipo="openai") == "CHAVE-OPENAI-0987654321"

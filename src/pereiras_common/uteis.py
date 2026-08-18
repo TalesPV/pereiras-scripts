@@ -44,6 +44,15 @@ DIR_CHAVES_PADRAO = Path.home() / ".chaves_ia"
 NOME_CHAVE_GEMINI = "chave_google_gemini.key"
 NOME_CHAVE_OPENAI = "chave_openai_chatgpt.key"
 
+# Cada pessoa nomeia o arquivo de chave do seu jeito: "chave_google_gemini.key",
+# "CHAVE_GOOGLE_GEMINI.txt", "._CHAVE_GOOGLE_GEMINI.txt"... Em vez de exigir um
+# nome exato, procuramos na pasta um arquivo cujo nome contenha as palavras do
+# provedor. Isso evita o erro silencioso de "IA indisponível" só por causa do nome.
+PALAVRAS_CHAVE_PROVEDOR = {
+    "gemini": ("gemini", "google"),
+    "openai": ("openai", "chatgpt", "gpt"),
+}
+
 # Caminhos completos padrão (os programas podem sobrescrever via linha de comando).
 CHAVE_GEMINI_PADRAO = DIR_CHAVES_PADRAO / NOME_CHAVE_GEMINI
 CHAVE_OPENAI_PADRAO = DIR_CHAVES_PADRAO / NOME_CHAVE_OPENAI
@@ -288,7 +297,67 @@ def expandir_caminho(caminho: str | Path | None) -> Path | None:
     return Path(os.path.expanduser(texto))
 
 
-def ler_chave(caminho_arquivo: str | Path) -> str | None:
+def localizar_chave(diretorio: str | Path, tipo: str) -> Path | None:
+    """Procura na pasta um arquivo de chave do provedor ``tipo``.
+
+    Aceita qualquer variação de nome que contenha as palavras do provedor
+    (:data:`PALAVRAS_CHAVE_PROVEDOR`), sem diferenciar maiúsculas nem exigir
+    extensão específica. Todos estes são encontrados para ``"gemini"``::
+
+        chave_google_gemini.key
+        CHAVE_GOOGLE_GEMINI.txt
+        ._CHAVE_GOOGLE_GEMINI.txt
+
+    Só devolve arquivos que realmente parecem uma chave (conteúdo com pelo
+    menos :data:`COMPRIMENTO_MINIMO_CHAVE` caracteres) — assim um arquivo
+    vazio na pasta não mascara a chave verdadeira.
+
+    Havendo mais de um candidato, prefere o nome padrão do provedor e, na
+    falta dele, a ordem alfabética (resultado estável entre execuções).
+
+    Devolve ``None`` se a pasta não existir ou não houver candidato válido.
+    """
+    pasta = expandir_caminho(diretorio)
+    if pasta is None or not pasta.is_dir():
+        return None
+    palavras = PALAVRAS_CHAVE_PROVEDOR.get(str(tipo).strip().lower())
+    if not palavras:
+        return None
+    candidatos = []
+    try:
+        arquivos = sorted(p for p in pasta.iterdir() if p.is_file())
+    except OSError:
+        return None
+    for arquivo in arquivos:
+        nome = arquivo.name.lower()
+        # O nome precisa citar o provedor E não pode ser de outro provedor.
+        if not any(palavra in nome for palavra in palavras):
+            continue
+        if _de_outro_provedor(nome, palavras):
+            continue
+        if ler_chave(arquivo) is None:
+            continue
+        candidatos.append(arquivo)
+    if not candidatos:
+        return None
+    padrao = NOME_CHAVE_GEMINI if palavras is PALAVRAS_CHAVE_PROVEDOR["gemini"] else NOME_CHAVE_OPENAI
+    for arquivo in candidatos:
+        if arquivo.name.lower() == padrao.lower():
+            return arquivo
+    return candidatos[0]
+
+
+def _de_outro_provedor(nome: str, palavras: tuple) -> bool:
+    """True se o nome cita um provedor diferente do procurado (evita troca)."""
+    for tipo_outro, palavras_outro in PALAVRAS_CHAVE_PROVEDOR.items():
+        if palavras_outro is palavras:
+            continue
+        if any(p in nome for p in palavras_outro):
+            return True
+    return False
+
+
+def ler_chave(caminho_arquivo: str | Path, tipo: str | None = None) -> str | None:
     r"""Lê uma chave de API de um arquivo de texto e devolve limpa.
 
     Regras de segurança (importante!):
@@ -308,7 +377,15 @@ def ler_chave(caminho_arquivo: str | Path) -> str | None:
         ler_chave(r"$HOME\.chaves_ia\chave_google_gemini.key")
     """
     caminho = expandir_caminho(caminho_arquivo)
-    if caminho is None or not caminho.is_file():
+    if caminho is None:
+        return None
+    # Apontando para uma PASTA (com o tipo do provedor), localiza o arquivo lá
+    # dentro aceitando variações de nome.
+    if tipo and caminho.is_dir():
+        caminho = localizar_chave(caminho, tipo)
+        if caminho is None:
+            return None
+    if not caminho.is_file():
         # Arquivo não existe: o chamador decide o que fazer (ignorar IA etc.).
         return None
     try:
@@ -325,6 +402,7 @@ __all__ = [
     "CHAVE_OPENAI_PADRAO",
     "DIR_CHAVES_PADRAO",
     "MAX_PALAVRAS_TITULO",
+    "PALAVRAS_CHAVE_PROVEDOR",
     "NOME_CHAVE_GEMINI",
     "NOME_CHAVE_OPENAI",
     "carregar_cache_jsonl",
@@ -332,6 +410,7 @@ __all__ = [
     "gravar_cache_jsonl",
     "hash_curto_6",
     "ler_chave",
+    "localizar_chave",
     "normalizar_titulo",
     "para_snake_case",
     "sha256_arquivo",
